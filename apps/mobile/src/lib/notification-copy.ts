@@ -1,0 +1,13 @@
+export function deadlineWarning(minutes: number) {
+  if (minutes <= 30)
+    return "You have 30 minutes before your promise becomes public.";
+  if (minutes <= 120) return "Two hours left. Your friends are watching.";
+  return "Your workout commitment is due today.";
+}
+export function proofResult(status: "verified" | "rejected" | "review") {
+  return status === "verified"
+    ? "Your proof was verified. You're safe."
+    : status === "review"
+      ? "Your circle needs to review your proof."
+      : "Your proof was rejected. Submit more proof or dispute the decision.";
+}

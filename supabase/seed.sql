@@ -1,0 +1,2 @@
+-- Development-only seed. Create auth users through Supabase Studio, then run these inserts with their IDs.
+-- No sample data is loaded automatically into production.

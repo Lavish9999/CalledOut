@@ -1,0 +1,25 @@
+appId: com.calledout.app
+name: Account, onboarding, and proof
+---
+- launchApp:
+    clearState: true
+- tapOn: "Get called out"
+- tapOn: "Email"
+- inputText: "${TEST_EMAIL}"
+- tapOn: "Password"
+- inputText: "${TEST_PASSWORD}"
+- tapOn: "Create account"
+# The CI harness confirms the email through Supabase Admin before continuing.
+- launchApp
+- assertVisible: "How it works"
+- tapOn: "Continue"
+- tapOn: "Display name"
+- inputText: "Test Member"
+- tapOn: "Username"
+- inputText: "test_member"
+- tapOn: "Continue"
+- tapOn: "Gym"
+- tapOn: "Continue"
+- tapOn: "Continue"
+- tapOn: "Create first commitment"
+- assertVisible: "TODAY"

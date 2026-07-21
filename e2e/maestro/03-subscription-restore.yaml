@@ -1,0 +1,8 @@
+appId: com.calledout.app
+name: Pro purchase and restore
+---
+- launchApp
+- tapOn: "PROFILE"
+- tapOn: "CalledOut Pro"
+- assertVisible: "Make excuses harder."
+- tapOn: "Restore purchases"

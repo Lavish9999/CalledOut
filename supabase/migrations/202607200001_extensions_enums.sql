@@ -1,0 +1,22 @@
+begin;
+create extension if not exists pgcrypto;
+create extension if not exists citext;
+create extension if not exists pg_cron;
+
+create type public.circle_role as enum ('owner','moderator','member');
+create type public.membership_status as enum ('pending','active','removed','left');
+create type public.circle_privacy as enum ('private','discoverable','public');
+create type public.commitment_status as enum ('upcoming','proof_window_open','proof_submitted','under_review','verified','missed','excused','redemption_available','redeemed','rejected');
+create type public.proof_method as enum ('live_photo','live_video','location','health','wearable','friend','combined');
+create type public.workout_type as enum ('gym','running','walking','cycling','sports','home','swimming','mobility','other');
+create type public.proof_status as enum ('pending_upload','processing','circle_review','verified','more_proof_required','rejected','disputed');
+create type public.location_result as enum ('within_approved_location','outside_approved_location','unavailable','not_required');
+create type public.redemption_status as enum ('available','in_progress','completed','expired','waived');
+create type public.report_status as enum ('open','triaged','actioned','dismissed','appealed');
+create type public.moderation_action_type as enum ('warning','content_removed','member_removed','suspended','banned','reinstated','appeal_accepted','appeal_denied');
+create type public.subscription_status as enum ('trialing','active','grace_period','billing_issue','cancelled','expired');
+create type public.entitlement_status as enum ('active','inactive');
+create type public.activity_type as enum ('proof_verified','commitment_missed','redemption_completed','streak_record','member_joined','challenge_started');
+create type public.visibility_scope as enum ('only_me','circle','friends','public');
+create type public.reaction_type as enum ('we_saw_that','tomorrow','no_excuses','redemption_time','owe_group','eye','clock','running');
+commit;

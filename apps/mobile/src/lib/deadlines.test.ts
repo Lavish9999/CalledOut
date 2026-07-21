@@ -1,0 +1,12 @@
+import { describe, it, expect } from "vitest";
+import { canClientEdit } from "./deadlines";
+describe("commitment lock", () => {
+  it("allows upcoming before window", () =>
+    expect(
+      canClientEdit("2026-07-20T10:00:00Z", "2026-07-20T12:00:00Z", "upcoming"),
+    ).toBe(true));
+  it("locks at window open", () =>
+    expect(
+      canClientEdit("2026-07-20T12:00:00Z", "2026-07-20T12:00:00Z", "upcoming"),
+    ).toBe(false));
+});

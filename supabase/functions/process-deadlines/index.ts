@@ -1,0 +1,3 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
+
+Deno.serve(async(req)=>{const secret=Deno.env.get('DEADLINE_JOB_SECRET');if(!secret||req.headers.get('x-job-secret')!==secret)return new Response('Unauthorized',{status:401});const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);const{data,error}=await admin.rpc('process_commitment_deadlines');if(error){console.error(error);return new Response(JSON.stringify({error:error.message}),{status:500})}return new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}})});

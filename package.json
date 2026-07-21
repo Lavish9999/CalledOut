@@ -1,0 +1,33 @@
+{
+  "name": "calledout",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "mobile": "npm --workspace apps/mobile run start",
+    "typecheck": "npm --workspace apps/mobile run typecheck && npm --workspace apps/admin run typecheck",
+    "lint": "npm --workspace apps/mobile run lint",
+    "test": "npm --workspace apps/mobile run test",
+    "verify": "npm run typecheck && npm --workspace apps/mobile run lint && npm --workspace apps/mobile run test && npm run build:admin",
+    "admin": "npm --workspace apps/admin run dev",
+    "build:admin": "npm --workspace apps/admin run build"
+  },
+  "overrides": {
+    "@typescript-eslint/eslint-plugin": "8.64.0",
+    "@typescript-eslint/parser": "8.64.0",
+    "@typescript-eslint/scope-manager": "8.64.0",
+    "@typescript-eslint/types": "8.64.0",
+    "@typescript-eslint/typescript-estree": "8.64.0",
+    "@typescript-eslint/utils": "8.64.0",
+    "@typescript-eslint/visitor-keys": "8.64.0",
+    "@typescript-eslint/type-utils": "8.64.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "unrs-resolver@1.12.2": true
+  },
+  "devDependencies": {
+    "supabase": "^2.109.1"
+  }
+}

@@ -1,0 +1,9 @@
+appId: com.calledout.app
+name: Account deletion request
+---
+- launchApp
+- tapOn: "PROFILE"
+- tapOn: "Settings & privacy"
+- tapOn: "Delete account"
+- tapOn: "Delete account"
+- assertVisible: "You said you were going."

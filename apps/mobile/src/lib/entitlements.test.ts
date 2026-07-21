@@ -1,0 +1,26 @@
+import { describe, it, expect } from "vitest";
+import {
+  canCreateCircle,
+  canCreateRecurringSchedule,
+  canSubmitProof,
+} from "./entitlements";
+describe("entitlement safety", () => {
+  it("keeps proof submission available after expiry", () =>
+    expect(canSubmitProof()).toBe(true));
+  it("limits free circles", () =>
+    expect(
+      canCreateCircle({
+        isPro: false,
+        activeCircleCount: 1,
+        activeScheduleCount: 0,
+      }),
+    ).toBe(false));
+  it("allows pro schedules", () =>
+    expect(
+      canCreateRecurringSchedule({
+        isPro: true,
+        activeCircleCount: 4,
+        activeScheduleCount: 8,
+      }),
+    ).toBe(true));
+});
