@@ -61,7 +61,7 @@ select throws_ok(
     set account_status = 'active'
     where id = '00000000-0000-0000-0000-000000000201'
   $$,
-  'permission denied for table profiles',
+  'Account status cannot be changed from the client',
   'a deletion-pending user cannot directly restore profile status'
 );
 
