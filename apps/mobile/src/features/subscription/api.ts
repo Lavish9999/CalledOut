@@ -76,11 +76,12 @@ export async function reconcilePlanAccess(options?: {
 }): Promise<PlanOverview> {
   const attempts = Math.max(1, options?.attempts ?? 2);
   const delayMs = Math.max(0, options?.delayMs ?? 700);
+  const force = options?.force ?? options?.expectPro ?? false;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await syncRevenueCatEntitlement({ force: options?.force });
+      await syncRevenueCatEntitlement({ force });
       const plan = await getPlanOverview();
 
       if (!options?.expectPro || plan.isPro) return plan;
