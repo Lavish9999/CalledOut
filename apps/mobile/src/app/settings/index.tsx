@@ -18,15 +18,40 @@ import { useSession } from "../../providers/session";
 import { supabase } from "../../lib/supabase";
 import { colors } from "../../theme/tokens";
 
-async function requestDeletion() {
-  const result = await supabase.functions.invoke("request-account-deletion");
+async function requestDeletion(continueWithoutAppleRevocation = false) {
+  const result = await supabase.functions.invoke("request-account-deletion", {
+    body: { continueWithoutAppleRevocation },
+  });
   if (result.error) throw result.error;
   if (result.data?.error) throw new Error(result.data.error);
   return result.data as {
     scheduledFor?: string;
     requiresAppleReauth?: boolean;
+    appleRevocationPrepared?: boolean;
     message?: string;
   };
+}
+
+function confirmDeletionWithoutAppleRevocation(message?: string) {
+  return new Promise<boolean>((resolve) => {
+    Alert.alert(
+      "Apple confirmation unavailable",
+      `${message ?? "CalledOut could not confirm the linked Apple account."}\n\nYou can still permanently delete your CalledOut account. Apple authorization may need to be removed separately from your Apple ID settings.`,
+      [
+        {
+          text: "Keep account",
+          style: "cancel",
+          onPress: () => resolve(false),
+        },
+        {
+          text: "Delete anyway",
+          style: "destructive",
+          onPress: () => resolve(true),
+        },
+      ],
+      { cancelable: false },
+    );
+  });
 }
 
 export default function Settings() {
@@ -71,14 +96,33 @@ export default function Settings() {
       let result = await requestDeletion();
 
       if (result.requiresAppleReauth) {
-        const confirmation = await prepareAppleRevocationForDeletion();
-        if (confirmation.cancelled) return;
-        result = await requestDeletion();
+        let appleConfirmed = false;
+        let appleError: string | undefined;
+
+        try {
+          const confirmation = await prepareAppleRevocationForDeletion();
+          appleConfirmed = !confirmation.cancelled;
+        } catch (error) {
+          appleError =
+            error instanceof Error
+              ? error.message
+              : "Apple confirmation could not be completed.";
+        }
+
+        if (appleConfirmed) {
+          result = await requestDeletion();
+        } else {
+          const proceed = await confirmDeletionWithoutAppleRevocation(
+            appleError ?? result.message,
+          );
+          if (!proceed) return;
+          result = await requestDeletion(true);
+        }
       }
 
-      if (result.requiresAppleReauth || !result.scheduledFor) {
+      if (!result.scheduledFor) {
         throw new Error(
-          result.message ?? "Apple account confirmation could not be completed.",
+          result.message ?? "CalledOut could not schedule account deletion.",
         );
       }
 
@@ -110,7 +154,7 @@ export default function Settings() {
   function deletion() {
     Alert.alert(
       "Delete account?",
-      "Your profile and social visibility will be removed and the account will enter a 30-day deletion process. If this account uses Sign in with Apple, Apple will ask you to confirm the linked account. Deleting CalledOut does not cancel an App Store subscription, so cancel it from Subscription & plan first. Limited billing, security, fraud-prevention, audit, or legal records may be retained when required.",
+      "Your profile and social visibility will be removed and the account will enter a 30-day deletion process. If this account uses Sign in with Apple, Apple may ask you to confirm the linked account so CalledOut can revoke its authorization. You can still continue deletion if Apple confirmation is unavailable. Deleting CalledOut does not cancel an App Store subscription, so cancel it from Subscription & plan first. Limited billing, security, fraud-prevention, audit, or legal records may be retained when required.",
       [
         { text: "Cancel", style: "cancel" },
         {
