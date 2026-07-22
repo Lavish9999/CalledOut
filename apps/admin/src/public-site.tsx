@@ -22,14 +22,14 @@ const pages: Record<PublicPageKey, Page> = {
         title: 'Information you provide',
         paragraphs: [
           'CalledOut stores account information, your profile, commitments, circle membership, reactions, reports, support requests, and the proof you choose to submit.',
-          'Fresh proof may include photos, timestamps, verification prompts, and optional location signals when a commitment requires them. Exact location is not displayed to friends.',
+          'Fresh proof includes in-app photos, timestamps, and randomized verification prompts. Camera-roll photos are not accepted as standard proof.',
         ],
       },
       {
         title: 'How information is used',
         paragraphs: [
           'We use information to operate commitments, verify proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.',
-          'CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and purchases.',
+          'CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and App Store purchases.',
         ],
       },
       {
@@ -71,7 +71,7 @@ const pages: Record<PublicPageKey, Page> = {
         title: 'Subscriptions',
         paragraphs: [
           'CalledOut Pro is optional. Prices, billing periods, trials, and renewal terms are shown before purchase. Payment is handled by your App Store account.',
-          'Subscriptions renew unless canceled in App Store subscription settings. Canceling normally keeps Pro active through the paid period. Deleting your CalledOut account does not cancel the store subscription.',
+          'Subscriptions renew unless canceled in App Store subscription settings. Canceling normally keeps Pro active through the paid period. Deleting your CalledOut account does not cancel the App Store subscription.',
         ],
       },
     ],
@@ -91,7 +91,7 @@ const pages: Record<PublicPageKey, Page> = {
       {
         title: 'Submit safe, authentic content',
         paragraphs: [
-          'Proof must be your own and must not contain sexual content, graphic injury, illegal activity, private information, or people who did not consent to being recorded.',
+          'Proof must be your own and must not contain sexual content, graphic injury, illegal activity, private information, or people who did not consent to being photographed.',
           'Do not fake proof, reuse another person’s content, manipulate timestamps, impersonate users, spam circles, or coordinate false reports.',
         ],
       },
