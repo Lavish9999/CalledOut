@@ -43,6 +43,16 @@ Deno.serve(async (req) => {
       return json({ error: "submissionId is required" }, 400);
     }
 
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("account_status")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || profile?.account_status !== "active") {
+      return json({ error: "This CalledOut account is restricted" }, 403);
+    }
+
     const { data: proof, error: proofError } = await admin
       .from("proof_submissions")
       .select("*, commitment:commitments(*)")
@@ -57,9 +67,25 @@ Deno.serve(async (req) => {
 
     if (proof.status === "verified") {
       return json({
-        status: proof.status,
+        status: "verified",
         score: proof.verification_score,
-        explanation: "This proof was already verified.",
+        explanation: "This proof was already approved.",
+      });
+    }
+
+    if (proof.status === "circle_review" || proof.status === "disputed") {
+      return json({
+        status: "circle_review",
+        score: null,
+        explanation: "This proof is already awaiting human review.",
+      });
+    }
+
+    if (proof.status === "rejected") {
+      return json({
+        status: "more_proof_required",
+        score: null,
+        explanation: "This proof was rejected. Retake fresh proof before the deadline.",
       });
     }
 
@@ -70,6 +96,7 @@ Deno.serve(async (req) => {
 
     const now = Date.now();
     const capturedAt = new Date(proof.captured_at).getTime();
+    const receivedAt = new Date(proof.received_at).getTime();
     const windowStartsAt = new Date(
       commitment.proof_window_starts_at,
     ).getTime();
@@ -78,48 +105,43 @@ Deno.serve(async (req) => {
       Number(commitment.grace_period_minutes ?? 0) * 60_000;
 
     const signals = {
-      freshCapture:
-        proof.capture_source === "in_app_camera" &&
-        Math.abs(now - capturedAt) < 15 * 60_000,
-      liveness: Boolean(proof.liveness_completed && proof.liveness_prompt),
+      inAppCamera: proof.capture_source === "in_app_camera",
+      captureTimestampValid:
+        Number.isFinite(capturedAt) &&
+        capturedAt <= now + 5 * 60_000 &&
+        capturedAt <= receivedAt + 5 * 60_000,
       withinWindow: capturedAt >= windowStartsAt && capturedAt <= deadlineAt,
-      locationMatch:
+      promptAttached: Boolean(
+        proof.liveness_completed &&
+          typeof proof.liveness_prompt === "string" &&
+          proof.liveness_prompt.trim(),
+      ),
+      assetAttached:
+        typeof proof.asset_path === "string" && proof.asset_path.length > 0,
+      locationReady:
         !commitment.requires_location ||
         proof.location_result === "within_approved_location",
-      healthMatch: false,
-      integrityClean: true,
     };
 
     const checks = [
-      ["fresh_capture", signals.freshCapture, 25],
-      ["liveness_prompt", signals.liveness, 20],
-      ["submission_window", signals.withinWindow, 15],
-      ["location_match", signals.locationMatch, 15],
-      ["health_or_wearable", signals.healthMatch, 15],
-      ["integrity_and_duplicate", signals.integrityClean, 10],
+      ["in_app_capture", signals.inAppCamera],
+      ["capture_timestamp", signals.captureTimestampValid],
+      ["submission_window", signals.withinWindow],
+      ["prompt_attached", signals.promptAttached],
+      ["asset_attached", signals.assetAttached],
+      ["location_ready", signals.locationReady],
     ] as const;
 
-    const score = checks.reduce(
-      (total, [, passed, points]) => total + (passed ? points : 0),
-      0,
-    );
-
-    const decision =
-      score >= 70
-        ? "verified"
-        : score >= 45
-          ? "circle_review"
-          : "more_proof_required";
-    const storedProofStatus =
-      decision === "more_proof_required" ? "rejected" : decision;
-
     const checksUpsert = await admin.from("verification_checks").upsert(
-      checks.map(([checkType, passed, points]) => ({
+      checks.map(([checkType, passed]) => ({
         proof_submission_id: submissionId,
         check_type: checkType,
         passed,
-        points_awarded: passed ? points : 0,
-        details: { automated: true },
+        points_awarded: 0,
+        details: {
+          automated: true,
+          purpose: "submission_readiness_only",
+        },
         updated_at: new Date().toISOString(),
       })),
       { onConflict: "proof_submission_id,check_type" },
@@ -131,16 +153,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    const decidedAt =
-      decision === "verified" || decision === "more_proof_required"
-        ? new Date().toISOString()
-        : null;
+    const readyForHumanReview = Object.values(signals).every(Boolean);
+    const decision = readyForHumanReview
+      ? "circle_review"
+      : "more_proof_required";
+    const storedProofStatus = readyForHumanReview
+      ? "circle_review"
+      : "rejected";
+    const decidedAt = readyForHumanReview ? null : new Date().toISOString();
 
     const proofUpdate = await admin
       .from("proof_submissions")
       .update({
         status: storedProofStatus,
-        verification_score: score,
+        verification_score: null,
         decided_at: decidedAt,
       })
       .eq("id", submissionId);
@@ -149,18 +175,11 @@ Deno.serve(async (req) => {
       throw new Error(`Proof update failed: ${proofUpdate.error.message}`);
     }
 
-    const commitmentStatus =
-      decision === "verified"
-        ? "verified"
-        : decision === "circle_review"
-          ? "under_review"
-          : "rejected";
-
     const commitmentUpdate = await admin
       .from("commitments")
       .update({
-        status: commitmentStatus,
-        verified_at: decision === "verified" ? decidedAt : null,
+        status: readyForHumanReview ? "under_review" : "rejected",
+        verified_at: null,
       })
       .eq("id", proof.commitment_id);
 
@@ -170,53 +189,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (decision === "verified") {
-      const { data: redemptionCommitment, error: redemptionLookupError } =
-        await admin
-          .from("redemptions")
-          .select("id")
-          .eq("redemption_commitment_id", proof.commitment_id)
-          .is("deleted_at", null)
-          .maybeSingle();
-
-      if (redemptionLookupError) {
-        throw new Error(
-          `Redemption lookup failed: ${redemptionLookupError.message}`,
-        );
-      }
-
-      // Redemption completion has its own trigger-generated activity event.
-      // Skipping the generic proof event prevents duplicate timeline entries.
-      if (!redemptionCommitment) {
-        const activityUpsert = await admin.from("activity_events").upsert(
-          {
-            actor_id: user.id,
-            circle_id: commitment.circle_id,
-            commitment_id: proof.commitment_id,
-            proof_submission_id: submissionId,
-            event_type: "proof_verified",
-            payload: { title: commitment.title },
-          },
-          { onConflict: "proof_submission_id,event_type" },
-        );
-
-        if (activityUpsert.error) {
-          throw new Error(
-            `Activity creation failed: ${activityUpsert.error.message}`,
-          );
-        }
-      }
-    }
-
     const auditInsert = await admin.from("audit_logs").insert({
       actor_id: user.id,
-      action: "proof_verification_decision",
+      action: "proof_submission_readiness_checked",
       entity_type: "proof_submission",
       entity_id: submissionId,
       after_state: {
         decision,
         stored_proof_status: storedProofStatus,
-        score,
         signals,
       },
     });
@@ -227,11 +207,10 @@ Deno.serve(async (req) => {
 
     return json({
       status: decision,
-      score,
-      explanation:
-        decision === "more_proof_required"
-          ? "This capture did not pass enough automated checks. A fresh retake is allowed before the deadline."
-          : "Automated checks are not infallible. Circle review and disputes remain available.",
+      score: null,
+      explanation: readyForHumanReview
+        ? "Fresh proof was received and is awaiting human review."
+        : "This capture is missing required proof metadata. Retake fresh proof before the deadline.",
     });
   } catch (error) {
     console.error("verify-proof failed", error);
