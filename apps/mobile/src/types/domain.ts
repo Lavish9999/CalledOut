@@ -93,8 +93,8 @@ export interface Commitment {
   status: CommitmentStatus;
   grace_period_minutes: number;
   verified_at: string | null;
-  missed_at: string | null;
-  circle: { name: string } | null;
+  missed_at?: string | null;
+  circle?: { name: string } | null;
 }
 
 export interface RedemptionLink {
@@ -113,8 +113,18 @@ export interface TodayDashboard {
   redemptions: RedemptionLink[];
 }
 
+export interface ProfileRecord {
+  scheduled: number;
+  completed: number;
+  missed: number;
+  redemptionsCompleted: number;
+  completionRate: number;
+  currentStreak: number;
+  longestStreak: number;
+}
+
 export interface CommitmentDetail extends Commitment {
-  proof: {
+  proof?: {
     id: string;
     status: string;
     verification_score: number | null;
