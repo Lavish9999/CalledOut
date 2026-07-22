@@ -6,6 +6,85 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
+type AdminClient = ReturnType<typeof createClient>;
+
+type CommitmentRecord = {
+  id: string;
+  user_id: string;
+  circle_id: string | null;
+  title: string;
+  proof_window_starts_at: string;
+  deadline_at: string;
+  grace_period_minutes: number;
+  requires_location: boolean;
+};
+
+async function notifyCircleReviewers(
+  admin: AdminClient,
+  commitment: CommitmentRecord,
+  submissionId: string,
+) {
+  if (!commitment.circle_id) return;
+
+  const [membersResult, blocksResult] = await Promise.all([
+    admin
+      .from("circle_members")
+      .select("user_id")
+      .eq("circle_id", commitment.circle_id)
+      .eq("status", "active")
+      .is("deleted_at", null)
+      .neq("user_id", commitment.user_id),
+    admin
+      .from("blocks")
+      .select("blocker_id,blocked_id")
+      .or(
+        `blocker_id.eq.${commitment.user_id},blocked_id.eq.${commitment.user_id}`,
+      ),
+  ]);
+
+  if (membersResult.error) throw membersResult.error;
+  if (blocksResult.error) throw blocksResult.error;
+
+  const blockedUsers = new Set<string>();
+  for (const block of blocksResult.data ?? []) {
+    if (block.blocker_id === commitment.user_id) {
+      blockedUsers.add(block.blocked_id);
+    } else if (block.blocked_id === commitment.user_id) {
+      blockedUsers.add(block.blocker_id);
+    }
+  }
+
+  const recipients = (membersResult.data ?? [])
+    .map((member) => member.user_id)
+    .filter((userId) => !blockedUsers.has(userId));
+
+  await Promise.all(
+    recipients.map(async (reviewerId) => {
+      const queued = await admin.rpc("queue_user_notification", {
+        p_user: reviewerId,
+        p_category: "review_required",
+        p_title: "Fresh proof needs review",
+        p_body: `${commitment.title} is waiting for a fair prompt and workout check.`,
+        p_data: {
+          route: `/circle/review/${submissionId}`,
+          submission_id: submissionId,
+          commitment_id: commitment.id,
+          circle_id: commitment.circle_id,
+        },
+        p_dedupe_key: `proof-review:${submissionId}:${reviewerId}`,
+        p_deliver_after: new Date().toISOString(),
+      });
+
+      if (queued.error) {
+        console.error("Could not queue proof-review notification", {
+          reviewerId,
+          error: queued.error,
+        });
+      }
+    }),
+  );
+}
+
 Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("authorization");
@@ -89,7 +168,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const commitment = proof.commitment;
+    const commitment = proof.commitment as CommitmentRecord | null;
     if (!commitment) {
       return json({ error: "Commitment data was not found" }, 404);
     }
@@ -189,6 +268,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (readyForHumanReview) {
+      await notifyCircleReviewers(admin, commitment, submissionId).catch(
+        (notificationError) => {
+          console.error("Proof review notification failed", notificationError);
+        },
+      );
+    }
+
     const auditInsert = await admin.from("audit_logs").insert({
       actor_id: user.id,
       action: "proof_submission_readiness_checked",
@@ -209,7 +296,9 @@ Deno.serve(async (req) => {
       status: decision,
       score: null,
       explanation: readyForHumanReview
-        ? "Fresh proof was received and is awaiting human review."
+        ? commitment.circle_id
+          ? "Fresh proof was received and circle reviewers were notified."
+          : "Fresh proof was received and is awaiting authorized review."
         : "This capture is missing required proof metadata. Retake fresh proof before the deadline.",
     });
   } catch (error) {
