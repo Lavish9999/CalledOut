@@ -8,6 +8,7 @@ import {
   SectionHeader,
   Text,
 } from "../../../components/ui";
+import { useSession } from "../../../providers/session";
 import { colors, spacing } from "../../../theme/tokens";
 
 type DocumentKey = "privacy" | "terms" | "community";
@@ -57,7 +58,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
         title: "Your choices",
         paragraphs: [
           "You can change public visibility, manage blocked accounts, report safety concerns, restore purchases, manage your subscription, and request account deletion inside the app.",
-          "Send privacy questions through Settings → Contact support.",
+          "Signed-in users can send privacy questions through Settings → Contact support.",
         ],
       },
     ],
@@ -98,7 +99,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Questions",
         paragraphs: [
-          "Questions about these terms can be submitted through Settings → Contact support.",
+          "Signed-in users can submit questions through Settings → Contact support.",
         ],
       },
     ],
@@ -146,6 +147,7 @@ function isDocumentKey(value: string | undefined): value is DocumentKey {
 
 export default function LegalDocumentScreen() {
   const params = useLocalSearchParams<{ document?: string }>();
+  const { session } = useSession();
   const key: DocumentKey = isDocumentKey(params.document)
     ? params.document
     : "privacy";
@@ -157,7 +159,7 @@ export default function LegalDocumentScreen() {
         eyebrow={document.eyebrow}
         title={document.title}
         subtitle={document.subtitle}
-        backLabel="Settings"
+        backLabel={session ? "Settings" : "Create account"}
         onBack={router.back}
       />
 
@@ -176,11 +178,19 @@ export default function LegalDocumentScreen() {
         </Card>
       ))}
 
-      <Button
-        title="Contact support"
-        variant="secondary"
-        onPress={() => router.push("/settings/support" as never)}
-      />
+      {session ? (
+        <Button
+          title="Contact support"
+          variant="secondary"
+          onPress={() => router.push("/settings/support" as never)}
+        />
+      ) : (
+        <Button
+          title="Back to create account"
+          variant="secondary"
+          onPress={router.back}
+        />
+      )}
     </Screen>
   );
 }
