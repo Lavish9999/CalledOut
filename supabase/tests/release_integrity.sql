@@ -137,6 +137,7 @@ values('80000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000
 select lives_ok($$select public.prepare_account_deletion('00000000-0000-0000-0000-000000000101')$$,'deletion preparation handles owned circles and references');
 select lives_ok($$delete from auth.users where id='00000000-0000-0000-0000-000000000101'$$,'prepared account hard-deletes without FK failure');
 select is((select owner_id::text from public.circles where id='40000000-0000-0000-0000-000000000001'),'00000000-0000-0000-0000-000000000102','owned circle transfers to active moderator');
+select is((select created_by::text from public.circle_invites where circle_id='40000000-0000-0000-0000-000000000001'),'00000000-0000-0000-0000-000000000102','invite ownership transfers with the circle');
 select is((select count(*)::integer from public.profiles where id='00000000-0000-0000-0000-000000000101'),0,'profile is removed');
 select ok((select target_user_id is null and proof_submission_id is null and comment_id is null from public.moderation_actions where id='80000000-0000-0000-0000-000000000001'),'moderation history remains without blocking deleted references');
 
