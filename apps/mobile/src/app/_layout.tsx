@@ -23,7 +23,11 @@ function Guard() {
 
     if (!session && group !== "(auth)" && !isPublicLegalRoute) {
       router.replace("/(auth)");
-    } else if (isRestrictedAccount && !isRestrictedRoute && !isPublicLegalRoute) {
+    } else if (
+      isRestrictedAccount &&
+      !isRestrictedRoute &&
+      !isPublicLegalRoute
+    ) {
       router.replace("/account-restricted" as never);
     } else if (
       session &&
@@ -76,6 +80,10 @@ function Guard() {
       <Stack.Screen name="circle/new" options={{ presentation: "modal" }} />
       <Stack.Screen name="circle/join" options={{ presentation: "modal" }} />
       <Stack.Screen name="circle/[id]" options={{ presentation: "card" }} />
+      <Stack.Screen
+        name="circle/review/[submissionId]"
+        options={{ presentation: "card" }}
+      />
       <Stack.Screen name="wall/[userId]" options={{ presentation: "card" }} />
       <Stack.Screen name="profile/history" options={{ presentation: "card" }} />
       <Stack.Screen name="paywall" options={{ presentation: "modal" }} />
