@@ -16,6 +16,12 @@ function base64ToBytes(value: string) {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 }
 
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return atob(padded);
+}
+
 async function encryptionKey() {
   const material = new TextEncoder().encode(
     required("APPLE_TOKEN_ENCRYPTION_KEY"),
@@ -69,13 +75,32 @@ export async function exchangeAppleAuthorizationCode(code: string) {
   });
 
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || typeof payload.refresh_token !== "string") {
+  if (
+    !response.ok ||
+    typeof payload.refresh_token !== "string" ||
+    typeof payload.id_token !== "string"
+  ) {
     throw new Error(
       `Apple token exchange failed: ${payload.error_description ?? payload.error ?? response.status}`,
     );
   }
 
-  return payload.refresh_token as string;
+  return {
+    refreshToken: payload.refresh_token as string,
+    idToken: payload.id_token as string,
+  };
+}
+
+export function appleSubjectFromIdToken(idToken: string) {
+  const segments = idToken.split(".");
+  if (segments.length !== 3) throw new Error("Apple identity token is invalid");
+
+  const payload = JSON.parse(decodeBase64Url(segments[1]));
+  if (payload.aud !== appleClientId() || typeof payload.sub !== "string") {
+    throw new Error("Apple identity token has an invalid audience or subject");
+  }
+
+  return payload.sub as string;
 }
 
 export async function encryptAppleRefreshToken(token: string) {
