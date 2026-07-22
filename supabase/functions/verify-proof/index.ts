@@ -6,7 +6,12 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-type AdminClient = ReturnType<typeof createClient>;
+// Edge Functions do not yet consume a generated Database type. Explicit row
+// contracts keep Deno strict checking useful without allowing SDK `never`
+// inference to leak into application logic.
+type AdminClient = any;
+type CircleMemberRow = { user_id: string };
+type BlockRow = { blocker_id: string; blocked_id: string };
 
 type CommitmentRecord = {
   id: string;
@@ -17,6 +22,21 @@ type CommitmentRecord = {
   deadline_at: string;
   grace_period_minutes: number;
   requires_location: boolean;
+};
+
+type ProofRecord = {
+  id: string;
+  commitment_id: string;
+  status: string;
+  verification_score: number | null;
+  captured_at: string;
+  received_at: string;
+  capture_source: string;
+  liveness_completed: boolean;
+  liveness_prompt: string | null;
+  asset_path: string | null;
+  location_result: string;
+  commitment: CommitmentRecord | CommitmentRecord[] | null;
 };
 
 async function notifyCircleReviewers(
@@ -45,8 +65,11 @@ async function notifyCircleReviewers(
   if (membersResult.error) throw membersResult.error;
   if (blocksResult.error) throw blocksResult.error;
 
+  const members = (membersResult.data ?? []) as CircleMemberRow[];
+  const blocks = (blocksResult.data ?? []) as BlockRow[];
   const blockedUsers = new Set<string>();
-  for (const block of blocksResult.data ?? []) {
+
+  for (const block of blocks) {
     if (block.blocker_id === commitment.user_id) {
       blockedUsers.add(block.blocked_id);
     } else if (block.blocked_id === commitment.user_id) {
@@ -54,12 +77,12 @@ async function notifyCircleReviewers(
     }
   }
 
-  const recipients = (membersResult.data ?? [])
-    .map((member) => member.user_id)
-    .filter((userId) => !blockedUsers.has(userId));
+  const recipients = members
+    .map((member: CircleMemberRow) => member.user_id)
+    .filter((userId: string) => !blockedUsers.has(userId));
 
   await Promise.all(
-    recipients.map(async (reviewerId) => {
+    recipients.map(async (reviewerId: string) => {
       const queued = await admin.rpc("queue_user_notification", {
         p_user: reviewerId,
         p_category: "review_required",
@@ -101,7 +124,7 @@ Deno.serve(async (req) => {
       throw new Error("Required Supabase function secrets are missing");
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
+    const admin: AdminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -115,33 +138,38 @@ Deno.serve(async (req) => {
       return json({ error: userError?.message ?? "Unauthorized" }, 401);
     }
 
-    const requestBody = await req.json();
-    const submissionId = requestBody?.submissionId;
+    const requestBody = (await req.json()) as { submissionId?: unknown };
+    const submissionId = requestBody.submissionId;
 
     if (!submissionId || typeof submissionId !== "string") {
       return json({ error: "submissionId is required" }, 400);
     }
 
-    const { data: profile, error: profileError } = await admin
+    const profileResult = await admin
       .from("profiles")
       .select("account_status")
       .eq("id", user.id)
       .single();
+    const profile = profileResult.data as { account_status?: string } | null;
 
-    if (profileError || profile?.account_status !== "active") {
+    if (profileResult.error || profile?.account_status !== "active") {
       return json({ error: "This CalledOut account is restricted" }, 403);
     }
 
-    const { data: proof, error: proofError } = await admin
+    const proofResult = await admin
       .from("proof_submissions")
       .select("*, commitment:commitments(*)")
       .eq("id", submissionId)
       .eq("user_id", user.id)
       .single();
+    const proof = proofResult.data as ProofRecord | null;
 
-    if (proofError || !proof) {
-      console.error("Proof lookup failed", proofError);
-      return json({ error: proofError?.message ?? "Proof not found" }, 404);
+    if (proofResult.error || !proof) {
+      console.error("Proof lookup failed", proofResult.error);
+      return json(
+        { error: proofResult.error?.message ?? "Proof not found" },
+        404,
+      );
     }
 
     if (proof.status === "verified") {
@@ -164,11 +192,14 @@ Deno.serve(async (req) => {
       return json({
         status: "more_proof_required",
         score: null,
-        explanation: "This proof was rejected. Retake fresh proof before the deadline.",
+        explanation:
+          "This proof was rejected. Retake fresh proof before the deadline.",
       });
     }
 
-    const commitment = proof.commitment as CommitmentRecord | null;
+    const commitment = Array.isArray(proof.commitment)
+      ? (proof.commitment[0] ?? null)
+      : proof.commitment;
     if (!commitment) {
       return json({ error: "Commitment data was not found" }, 404);
     }
@@ -270,7 +301,7 @@ Deno.serve(async (req) => {
 
     if (readyForHumanReview) {
       await notifyCircleReviewers(admin, commitment, submissionId).catch(
-        (notificationError) => {
+        (notificationError: unknown) => {
           console.error("Proof review notification failed", notificationError);
         },
       );
