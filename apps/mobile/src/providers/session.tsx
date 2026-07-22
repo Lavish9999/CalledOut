@@ -16,6 +16,7 @@ import { analytics } from "../lib/analytics";
 import { captureException } from "../lib/observability";
 import { reconcilePlanAccess } from "../features/subscription/api";
 import { queryClient, qk } from "../lib/query";
+import { clearPendingProofs } from "../lib/upload-queue";
 
 const PROFILE_LOAD_MESSAGE =
   "CalledOut could not load your account. Check your connection and try again.";
@@ -132,10 +133,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [activateSession]);
 
   useEffect(() => {
-    if (!session?.user.id) return;
+    const userId = session?.user.id;
+    if (!userId) return;
 
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
+
+      loadProfile(userId).catch((cause) =>
+        captureException(cause, { area: "profile_refresh_foreground" }),
+      );
 
       reconcilePlanAccess()
         .then((plan) => queryClient.setQueryData(qk.plan, plan))
@@ -147,7 +153,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.remove();
-  }, [session?.user.id]);
+  }, [session?.user.id, loadProfile]);
 
   const value = useMemo(
     () => ({
@@ -157,6 +163,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       error,
       refreshProfile,
       signOut: async () => {
+        const userId = session?.user.id;
+        if (userId) {
+          await clearPendingProofs(userId).catch((cause) =>
+            captureException(cause, { area: "proof_queue_logout_cleanup" }),
+          );
+        }
         await resetPurchasesUser().catch((cause) =>
           captureException(cause, { area: "revenuecat_logout" }),
         );
