@@ -51,10 +51,10 @@ export default function Settings() {
     );
   }
 
-  async function deletion() {
+  function deletion() {
     Alert.alert(
       "Delete account?",
-      "This starts deletion, signs you out, and removes social visibility. Legal, fraud-prevention, and financial records may be retained only for the disclosed period.",
+      "Your profile and social visibility will be removed and the account will enter the deletion process. Deleting CalledOut does not cancel an App Store or Play Store subscription, so cancel it from Subscription & plan first. Limited billing, security, fraud-prevention, audit, or legal records may be retained when required.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -67,9 +67,22 @@ export default function Settings() {
 
             if (result.error) {
               Alert.alert("Could not start deletion", result.error.message);
-            } else {
-              await signOut();
+              return;
             }
+
+            Alert.alert(
+              "Deletion requested",
+              "Your profile is now hidden and your account is queued for deletion. You will be signed out now.",
+              [
+                {
+                  text: "Sign out",
+                  onPress: () => {
+                    void signOut();
+                  },
+                },
+              ],
+              { cancelable: false },
+            );
           },
         },
       ],
@@ -112,6 +125,35 @@ export default function Settings() {
           </Text>
         ) : null}
       </Card>
+
+      <SectionHeader title="Safety & support" />
+      <Button
+        title="Blocked accounts"
+        variant="secondary"
+        onPress={() => router.push("/settings/blocked" as never)}
+      />
+      <Button
+        title="Contact support"
+        variant="secondary"
+        onPress={() => router.push("/settings/support" as never)}
+      />
+      <Button
+        title="Community Guidelines"
+        variant="secondary"
+        onPress={() => router.push("/settings/legal/community" as never)}
+      />
+
+      <SectionHeader title="Legal" />
+      <Button
+        title="Privacy Policy"
+        variant="secondary"
+        onPress={() => router.push("/settings/legal/privacy" as never)}
+      />
+      <Button
+        title="Terms of Use"
+        variant="secondary"
+        onPress={() => router.push("/settings/legal/terms" as never)}
+      />
 
       <SectionHeader title="Account" />
       <Button
