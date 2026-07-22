@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import {
+  appleSubjectFromIdToken,
   encryptAppleRefreshToken,
   exchangeAppleAuthorizationCode,
 } from "../_shared/apple.ts";
@@ -36,16 +37,34 @@ Deno.serve(async (req) => {
 
     if (userError || !user) return json({ error: "Unauthorized" }, 401);
 
+    const appleIdentity = user.identities?.find(
+      (identity) => identity.provider === "apple",
+    );
+    const expectedSubject = appleIdentity?.identity_data?.sub;
+    if (typeof expectedSubject !== "string" || !expectedSubject) {
+      return json({ error: "This account is not linked to Sign in with Apple" }, 400);
+    }
+
     const body = await req.json();
     const authorizationCode = body?.authorizationCode;
     if (typeof authorizationCode !== "string" || !authorizationCode.trim()) {
       return json({ error: "authorizationCode is required" }, 400);
     }
 
-    const refreshToken = await exchangeAppleAuthorizationCode(
+    const exchange = await exchangeAppleAuthorizationCode(
       authorizationCode.trim(),
     );
-    const encryptedRefreshToken = await encryptAppleRefreshToken(refreshToken);
+    const exchangedSubject = appleSubjectFromIdToken(exchange.idToken);
+    if (exchangedSubject !== expectedSubject) {
+      return json(
+        { error: "Use the same Apple account originally linked to CalledOut" },
+        403,
+      );
+    }
+
+    const encryptedRefreshToken = await encryptAppleRefreshToken(
+      exchange.refreshToken,
+    );
 
     const upsert = await admin.from("apple_revocation_tokens").upsert(
       {
