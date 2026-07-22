@@ -4,18 +4,22 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import { makeRedirectUri } from "expo-auth-session";
 import { Button, Field, Header, Screen, Text } from "../../components/ui";
+import { LegalLinks } from "../../components/legal-links";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { messageFor } from "../../lib/errors";
 import { analytics } from "../../lib/analytics";
 import { colors } from "../../theme/tokens";
+
 WebBrowser.maybeCompleteAuthSession();
+
 export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+
   async function emailSignUp() {
     setLoading(true);
     setError("");
@@ -34,6 +38,7 @@ export default function SignUp() {
     }
     setLoading(false);
   }
+
   async function oauth(provider: "google") {
     const redirectTo = makeRedirectUri({
       scheme: "calledout",
@@ -57,6 +62,7 @@ export default function SignUp() {
       }
     }
   }
+
   async function apple() {
     try {
       const c = await AppleAuthentication.signInAsync({
@@ -78,6 +84,7 @@ export default function SignUp() {
       setError(messageFor(e));
     }
   }
+
   return (
     <Screen>
       <Header
@@ -126,6 +133,7 @@ export default function SignUp() {
         disabled={password.length < 10 || !email.includes("@")}
         onPress={emailSignUp}
       />
+      <LegalLinks intro="By continuing, you agree to CalledOut's policies:" />
     </Screen>
   );
 }
