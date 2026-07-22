@@ -65,7 +65,11 @@ function TrendLine({ delta, priorTotal }: { delta: number | null; priorTotal: nu
       />
       <Text
         variant="bodyStrong"
-        style={{ color: direction === "down" ? colors.missed : colors.surface }}
+        style={{
+          color: direction === "down" ? colors.missed : colors.surface,
+          flex: 1,
+          flexShrink: 1,
+        }}
       >
         {direction === "flat"
           ? "No change from the prior 30 days"
@@ -79,24 +83,26 @@ function ConfidenceMeter({ resolvedCount }: { resolvedCount: number }) {
   const confidence = insightConfidence(resolvedCount);
 
   return (
-    <View style={{ gap: spacing.xs }}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          gap: spacing.md,
-        }}
-      >
+    <View style={{ gap: spacing.sm, width: "100%" }}>
+      <View style={{ gap: spacing.xxs, width: "100%" }}>
         <Text variant="label" style={{ color: "rgba(255,255,255,0.72)" }}>
           {confidence.label.toUpperCase()}
         </Text>
-        <Text variant="caption" style={{ color: "rgba(255,255,255,0.72)" }}>
+        <Text
+          variant="caption"
+          style={{
+            color: "rgba(255,255,255,0.72)",
+            flexShrink: 1,
+            width: "100%",
+          }}
+        >
           {confidence.detail}
         </Text>
       </View>
       <View
         style={{
           height: 6,
+          width: "100%",
           borderRadius: radius.pill,
           backgroundColor: "rgba(255,255,255,0.18)",
           overflow: "hidden",
@@ -139,7 +145,8 @@ function WeeklyChart({ weeks }: { weeks: InsightWeek[] }) {
           const totalHeight = week.total === 0 ? 8 : 34 + (week.total / maxTotal) * 66;
           const completedHeight =
             week.total === 0 ? 0 : Math.max(6, totalHeight * (week.completed / week.total));
-          const missedHeight = Math.max(0, totalHeight - completedHeight);
+          const missedHeight =
+            week.total === 0 ? 0 : Math.max(0, totalHeight - completedHeight);
 
           return (
             <View
@@ -287,6 +294,7 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
           borderColor: colors.dark,
           padding: spacing.xl,
           gap: spacing.lg,
+          overflow: "hidden",
         }}
       >
         <View style={{ gap: spacing.xs }}>
@@ -301,7 +309,7 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
               gap: spacing.md,
             }}
           >
-            <View>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text
                 style={{
                   color: colors.surface,
@@ -313,11 +321,14 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
               >
                 {formatRate(insights.last30CompletionRate)}
               </Text>
-              <Text variant="section" style={{ color: colors.surface }}>
+              <Text
+                variant="section"
+                style={{ color: colors.surface, flexShrink: 1 }}
+              >
                 {reliability} reliability
               </Text>
             </View>
-            <View style={{ alignItems: "flex-end", gap: spacing.xxs }}>
+            <View style={{ alignItems: "flex-end", gap: spacing.xxs, flexShrink: 0 }}>
               <Text variant="title" style={{ color: colors.surface }}>
                 {insights.last30Completed}/{insights.last30Total}
               </Text>
@@ -423,13 +434,13 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
             gap: spacing.md,
           }}
         >
-          <View style={{ flex: 1, gap: spacing.xs }}>
+          <View style={{ flex: 1, minWidth: 0, gap: spacing.xs }}>
             <Text variant="section">
               {insights.redemptionRate === null
                 ? "No resolved redemptions yet"
                 : `${formatRate(insights.redemptionRate)} answered`}
             </Text>
-            <Text style={{ color: colors.textSecondary }}>
+            <Text style={{ color: colors.textSecondary, flexShrink: 1 }}>
               {insights.redemptionResolvedCount
                 ? `${insights.redemptionCompletedCount} of ${insights.redemptionResolvedCount} redemption opportunities completed.`
                 : "When you miss, this measures whether you answer the callout before it expires."}
@@ -442,6 +453,7 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
                 backgroundColor: colors.surfaceMuted,
                 paddingHorizontal: spacing.sm,
                 paddingVertical: spacing.xs,
+                flexShrink: 0,
               }}
             >
               <Text variant="label">{insights.redemptionOpenCount} OPEN</Text>
@@ -450,7 +462,10 @@ function PremiumInsights({ insights }: { insights: AccountabilityInsights }) {
         </View>
       </Card>
 
-      <Text variant="caption" style={{ color: colors.textSecondary }}>
+      <Text
+        variant="caption"
+        style={{ color: colors.textSecondary, flexShrink: 1, width: "100%" }}
+      >
         Insights use resolved original promises only. Redemption workouts never
         inflate your consistency, and redemption never erases an original miss.
       </Text>
