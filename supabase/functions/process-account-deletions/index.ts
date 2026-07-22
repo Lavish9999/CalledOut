@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
+import {
+  appleRevocationConfigured,
+  decryptAppleRefreshToken,
+  revokeAppleRefreshToken,
+} from "../_shared/apple.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -75,6 +80,46 @@ async function recordFailure(
   }
 }
 
+async function revokeAppleIdentity(admin: StorageClient, userId: string) {
+  const userResult = await admin.auth.admin.getUserById(userId);
+  if (userResult.error) throw userResult.error;
+
+  const hasAppleIdentity = Boolean(
+    userResult.data.user?.identities?.some(
+      (identity) => identity.provider === "apple",
+    ),
+  );
+  if (!hasAppleIdentity) return false;
+
+  if (!appleRevocationConfigured()) {
+    throw new Error("Sign in with Apple revocation secrets are not configured");
+  }
+
+  const tokenResult = await admin
+    .from("apple_revocation_tokens")
+    .select("encrypted_refresh_token")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (tokenResult.error) throw tokenResult.error;
+  if (!tokenResult.data?.encrypted_refresh_token) {
+    throw new Error("Apple account revocation authorization is missing");
+  }
+
+  const refreshToken = await decryptAppleRefreshToken(
+    tokenResult.data.encrypted_refresh_token,
+  );
+  await revokeAppleRefreshToken(refreshToken);
+
+  const deletion = await admin
+    .from("apple_revocation_tokens")
+    .delete()
+    .eq("user_id", userId);
+  if (deletion.error) throw deletion.error;
+
+  return true;
+}
+
 Deno.serve(async (req) => {
   const secret = Deno.env.get("DEADLINE_JOB_SECRET");
   if (!secret || req.headers.get("x-job-secret") !== secret) {
@@ -118,6 +163,8 @@ Deno.serve(async (req) => {
         .eq("id", item.id);
       if (attemptUpdate.error) throw attemptUpdate.error;
 
+      const appleRevoked = await revokeAppleIdentity(admin, item.user_id);
+
       const preparation = await admin.rpc("prepare_account_deletion", {
         p_user: item.user_id,
       });
@@ -141,6 +188,7 @@ Deno.serve(async (req) => {
 
       console.info("CalledOut account deleted", {
         userId: item.user_id,
+        appleRevoked,
         proofFiles,
         profileFiles,
         preparation: preparation.data,
