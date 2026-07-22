@@ -6,7 +6,10 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-type AdminClient = ReturnType<typeof createClient>;
+// Supabase Edge Functions in this repository do not currently generate a
+// Database type. Keep the client unparameterized and put explicit contracts on
+// every row we read instead of allowing the SDK to infer `never`.
+type AdminClient = any;
 
 type NotificationJob = {
   id: string;
@@ -20,6 +23,12 @@ type NotificationJob = {
 
 type PushToken = { token: string };
 type TicketRecord = { id?: string; token: string; status: string; error?: string };
+type ReceiptJob = { id: string; expo_tickets: TicketRecord[] | null };
+type ExpoReceipt = {
+  status?: string;
+  message?: string;
+  details?: { error?: string };
+};
 
 function preferenceField(category: string) {
   const fields: Record<string, string> = {
@@ -51,7 +60,8 @@ async function categoryStillEnabled(
     .maybeSingle();
 
   if (error) throw error;
-  return data?.[field] !== false;
+  const row = data as Record<string, unknown> | null;
+  return row?.[field] !== false;
 }
 
 async function invalidateToken(admin: AdminClient, token: string) {
@@ -64,7 +74,7 @@ async function invalidateToken(admin: AdminClient, token: string) {
 
 async function checkReceipts(admin: AdminClient) {
   const cutoff = new Date(Date.now() - 10 * 60_000).toISOString();
-  const { data: jobs, error } = await admin
+  const result = await admin
     .from("notification_outbox")
     .select("id,expo_tickets")
     .eq("status", "sent")
@@ -73,15 +83,16 @@ async function checkReceipts(admin: AdminClient) {
     .lte("sent_at", cutoff)
     .limit(50);
 
-  if (error) throw error;
-  if (!jobs?.length) return { checked: 0, invalidated: 0 };
+  if (result.error) throw result.error;
+  const jobs = (result.data ?? []) as ReceiptJob[];
+  if (!jobs.length) return { checked: 0, invalidated: 0 };
 
   const ticketIds = [
     ...new Set(
       jobs.flatMap((job) =>
         (Array.isArray(job.expo_tickets) ? job.expo_tickets : [])
-          .map((ticket) => ticket?.id)
-          .filter((id): id is string => typeof id === "string" && Boolean(id)),
+          .map((ticket: TicketRecord) => ticket.id)
+          .filter((id: string | undefined): id is string => Boolean(id)),
       ),
     ),
   ];
@@ -98,13 +109,15 @@ async function checkReceipts(admin: AdminClient) {
   });
 
   if (!response.ok) throw new Error(await response.text());
-  const payload = await response.json();
-  const receipts = payload?.data ?? {};
+  const payload = (await response.json()) as {
+    data?: Record<string, ExpoReceipt>;
+  };
+  const receipts = payload.data ?? {};
   let invalidated = 0;
 
   for (const job of jobs) {
     const ticketRecords = Array.isArray(job.expo_tickets)
-      ? (job.expo_tickets as TicketRecord[])
+      ? job.expo_tickets
       : [];
     const errors: string[] = [];
 
@@ -146,7 +159,7 @@ Deno.serve(async (req) => {
     return json({ error: "Required Supabase secrets are missing" }, 500);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
+  const admin: AdminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -180,14 +193,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const { data: tokens, error: tokenError } = await admin
+      const tokenResult = await admin
         .from("push_tokens")
         .select("token")
         .eq("user_id", job.user_id)
         .is("invalidated_at", null);
 
-      if (tokenError) throw tokenError;
-      const activeTokens = (tokens ?? []) as PushToken[];
+      if (tokenResult.error) throw tokenResult.error;
+      const activeTokens = (tokenResult.data ?? []) as PushToken[];
 
       if (!activeTokens.length) {
         await admin
@@ -221,15 +234,25 @@ Deno.serve(async (req) => {
       });
 
       if (!response.ok) throw new Error(await response.text());
-      const payload = await response.json();
-      const tickets = Array.isArray(payload?.data) ? payload.data : [];
+      const payload = (await response.json()) as { data?: unknown[] };
+      const tickets = Array.isArray(payload.data) ? payload.data : [];
       const records: TicketRecord[] = activeTokens.map(({ token }, index) => {
-        const ticket = tickets[index] ?? {};
+        const ticket = (tickets[index] ?? {}) as {
+          id?: unknown;
+          status?: unknown;
+          message?: unknown;
+          details?: { error?: unknown };
+        };
         return {
           id: typeof ticket.id === "string" ? ticket.id : undefined,
           token,
-          status: ticket.status ?? "error",
-          error: ticket.details?.error ?? ticket.message,
+          status: typeof ticket.status === "string" ? ticket.status : "error",
+          error:
+            typeof ticket.details?.error === "string"
+              ? ticket.details.error
+              : typeof ticket.message === "string"
+                ? ticket.message
+                : undefined,
         };
       });
 
