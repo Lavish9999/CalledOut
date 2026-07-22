@@ -25,7 +25,11 @@ type Proof = {
   status: string;
   verification_score: number | null;
   created_at: string;
+  captured_at: string;
   user_id: string;
+  asset_path: string | null;
+  asset_url: string | null;
+  liveness_prompt: string | null;
   commitment: { title: string } | null;
 };
 type UserRow = {
@@ -51,6 +55,7 @@ function Login() {
         <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" /></label>
         {error && <p className="error">{error}</p>}
         <button onClick={async () => {
+          setError('');
           const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
           if (signInError) setError(signInError.message);
         }}>Sign in</button>
@@ -63,10 +68,16 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   return <article className="metric"><p className="eyebrow">{label}</p><strong>{value}</strong></article>;
 }
 
+function requiredReviewNote(promptText: string, initial = '') {
+  const note = window.prompt(promptText, initial)?.trim() ?? '';
+  return note.length >= 5 ? note : null;
+}
+
 function Dashboard({ profile }: { profile: AdminProfile }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'overview' | 'reports' | 'proofs' | 'users'>('overview');
   const [search, setSearch] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const metrics = useQuery({
     queryKey: ['admin', 'metrics'],
@@ -111,12 +122,25 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('proof_submissions')
-        .select('id,status,verification_score,created_at,user_id,commitment:commitments(title)')
-        .in('status', ['circle_review', 'disputed', 'more_proof_required'])
+        .select('id,status,verification_score,created_at,captured_at,user_id,asset_path,liveness_prompt,commitment:commitments(title)')
+        .in('status', ['circle_review', 'disputed'])
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
-      return data as unknown as Proof[];
+
+      return Promise.all((data ?? []).map(async (row) => {
+        const commitment = Array.isArray(row.commitment) ? row.commitment[0] ?? null : row.commitment;
+        let assetUrl: string | null = null;
+        if (row.asset_path) {
+          const signed = await supabase.storage.from('proof-media').createSignedUrl(row.asset_path, 600);
+          if (!signed.error) assetUrl = signed.data.signedUrl;
+        }
+        return {
+          ...row,
+          commitment,
+          asset_url: assetUrl,
+        } as Proof;
+      }));
     },
   });
 
@@ -145,7 +169,9 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
       });
       if (error) throw error;
     },
+    onMutate: () => setActionError(''),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
+    onError: (error) => setActionError(error instanceof Error ? error.message : 'Moderation failed'),
   });
 
   const resolve = useMutation({
@@ -157,8 +183,52 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
       });
       if (error) throw error;
     },
+    onMutate: () => setActionError(''),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] }),
+    onError: (error) => setActionError(error instanceof Error ? error.message : 'Report action failed'),
   });
+
+  const decideProof = useMutation({
+    mutationFn: async (input: { proofId: string; accept: boolean; reason: string }) => {
+      const { error } = await supabase.rpc('admin_decide_proof', {
+        p_submission: input.proofId,
+        p_accept: input.accept,
+        p_reason: input.reason,
+      });
+      if (error) throw error;
+    },
+    onMutate: () => setActionError(''),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'proofs'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'metrics'] }),
+      ]);
+    },
+    onError: (error) => setActionError(error instanceof Error ? error.message : 'Proof decision failed'),
+  });
+
+  function moderateUser(user: UserRow, action: 'suspend' | 'ban' | 'reinstate') {
+    const reason = requiredReviewNote(`Required case note for ${action}ing @${user.username}:`);
+    if (!reason) return;
+    if (!window.confirm(`${action} @${user.username}? This action is audited.`)) return;
+    moderate.mutate({ userId: user.id, action, reason });
+  }
+
+  function resolveReport(report: Report, status: 'actioned' | 'dismissed') {
+    const notes = requiredReviewNote(`Required review note for marking this report ${status}:`);
+    if (!notes) return;
+    if (!window.confirm(`Mark this report ${status}?`)) return;
+    resolve.mutate({ reportId: report.id, status, notes });
+  }
+
+  function reviewProof(proof: Proof, accept: boolean) {
+    const reason = requiredReviewNote(
+      accept ? 'What in the photo confirms the prompt and workout environment?' : 'Why does this proof fail the prompt or workout requirement?',
+    );
+    if (!reason) return;
+    if (!window.confirm(`${accept ? 'Approve' : 'Reject'} this proof? The member record will update immediately.`)) return;
+    decideProof.mutate({ proofId: proof.id, accept, reason });
+  }
 
   return (
     <div className="shell">
@@ -171,6 +241,7 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
       </aside>
       <main className="workspace">
         <header><div><p className="eyebrow">SECURE OPERATIONS</p><h1>{tab[0].toUpperCase() + tab.slice(1)}</h1></div><span className="stamp">ADMIN VERIFIED</span></header>
+        {actionError && <p className="error">{actionError}</p>}
         {tab === 'overview' && <>
           {metrics.isLoading ? <p>Loading metrics…</p> : <section className="metrics">
             <Metric label="NEW USERS · 7D" value={metrics.data?.newUsers ?? 0} />
@@ -185,15 +256,15 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
           <section className="panel"><h3>Operating principle</h3><p>Review behavior and proof integrity only. Never moderate users based on body shape, weight, athletic ability, disability, or workout intensity.</p></section>
         </>}
         {tab === 'reports' && <section className="panel table-wrap"><table><thead><tr><th>Created</th><th>Reason</th><th>Status</th><th>Target</th><th>Action</th></tr></thead><tbody>
-          {reports.data?.map((report) => <tr key={report.id}><td>{new Date(report.created_at).toLocaleString()}</td><td><strong>{report.reason}</strong><br /><span className="muted">{report.details}</span></td><td>{report.status}</td><td>{report.reported_user_id ?? report.proof_submission_id ?? 'Content'}</td><td><button onClick={() => resolve.mutate({ reportId: report.id, status: 'actioned', notes: 'Reviewed in admin dashboard' })}>Actioned</button><button className="secondary" onClick={() => resolve.mutate({ reportId: report.id, status: 'dismissed', notes: 'No policy violation found' })}>Dismiss</button></td></tr>)}
+          {reports.data?.map((report) => <tr key={report.id}><td>{new Date(report.created_at).toLocaleString()}</td><td><strong>{report.reason}</strong><br /><span className="muted">{report.details}</span></td><td>{report.status}</td><td>{report.reported_user_id ?? report.proof_submission_id ?? 'Content'}</td><td><button onClick={() => resolveReport(report, 'actioned')}>Actioned</button><button className="secondary" onClick={() => resolveReport(report, 'dismissed')}>Dismiss</button></td></tr>)}
         </tbody></table></section>}
-        {tab === 'proofs' && <section className="panel table-wrap"><table><thead><tr><th>Created</th><th>Workout</th><th>Status</th><th>Score</th><th>User</th></tr></thead><tbody>
-          {proofs.data?.map((proof) => <tr key={proof.id}><td>{new Date(proof.created_at).toLocaleString()}</td><td>{proof.commitment?.title ?? 'Workout proof'}</td><td>{proof.status}</td><td>{proof.verification_score ?? '—'}</td><td>{proof.user_id}</td></tr>)}
+        {tab === 'proofs' && <section className="panel table-wrap"><table><thead><tr><th>Captured</th><th>Workout</th><th>Prompt</th><th>Photo</th><th>Status</th><th>User</th><th>Decision</th></tr></thead><tbody>
+          {proofs.data?.map((proof) => <tr key={proof.id}><td>{new Date(proof.captured_at).toLocaleString()}</td><td>{proof.commitment?.title ?? 'Workout proof'}</td><td>{proof.liveness_prompt ?? 'No prompt'}</td><td>{proof.asset_url ? <a href={proof.asset_url} target="_blank" rel="noreferrer">Open proof</a> : 'Unavailable'}</td><td>{proof.status}</td><td>{proof.user_id}</td><td><button disabled={decideProof.isPending} onClick={() => reviewProof(proof, true)}>Approve</button><button className="danger" disabled={decideProof.isPending} onClick={() => reviewProof(proof, false)}>Reject</button></td></tr>)}
         </tbody></table></section>}
         {tab === 'users' && <>
           <input className="search" placeholder="Search display name or username" value={search} onChange={(event) => setSearch(event.target.value)} />
           <section className="panel table-wrap"><table><thead><tr><th>User</th><th>Status</th><th>Completion</th><th>Joined</th><th>Moderation</th></tr></thead><tbody>
-            {users.data?.map((user) => <tr key={user.id}><td><strong>{user.display_name}</strong><br /><span className="muted">@{user.username}</span></td><td>{user.account_status}</td><td>{user.completion_rate}%</td><td>{new Date(user.created_at).toLocaleDateString()}</td><td><button onClick={() => moderate.mutate({ userId: user.id, action: 'suspend', reason: 'Admin review action' })}>Suspend</button><button className="danger" onClick={() => moderate.mutate({ userId: user.id, action: 'ban', reason: 'Confirmed severe policy violation' })}>Ban</button><button className="secondary" onClick={() => moderate.mutate({ userId: user.id, action: 'reinstate', reason: 'Appeal accepted or restriction complete' })}>Reinstate</button></td></tr>)}
+            {users.data?.map((user) => <tr key={user.id}><td><strong>{user.display_name}</strong><br /><span className="muted">@{user.username}</span></td><td>{user.account_status}</td><td>{user.completion_rate}%</td><td>{new Date(user.created_at).toLocaleDateString()}</td><td><button disabled={moderate.isPending} onClick={() => moderateUser(user, 'suspend')}>Suspend</button><button className="danger" disabled={moderate.isPending} onClick={() => moderateUser(user, 'ban')}>Ban</button><button className="secondary" disabled={moderate.isPending} onClick={() => moderateUser(user, 'reinstate')}>Reinstate</button></td></tr>)}
           </tbody></table></section>
         </>}
       </main>
@@ -217,9 +288,9 @@ export default function App() {
       return data as AdminProfile;
     },
   });
-  const denied = useMemo(() => profile.data && !profile.data.is_admin, [profile.data]);
+  const denied = useMemo(() => profile.data && (!profile.data.is_admin || profile.data.account_status !== 'active'), [profile.data]);
   if (!session) return <Login />;
   if (profile.isLoading) return <main className="center">Checking admin authorization…</main>;
-  if (denied) return <main className="center"><section className="auth-card"><h1>Access denied.</h1><p>This account does not have a server-authorized admin role.</p><button onClick={() => supabase.auth.signOut()}>Sign out</button></section></main>;
+  if (denied) return <main className="center"><section className="auth-card"><h1>Access denied.</h1><p>This account does not have an active server-authorized admin role.</p><button onClick={() => supabase.auth.signOut()}>Sign out</button></section></main>;
   return profile.data ? <Dashboard profile={profile.data} /> : null;
 }
