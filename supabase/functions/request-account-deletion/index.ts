@@ -34,6 +34,27 @@ Deno.serve(async (req) => {
       return json({ error: userError?.message ?? "Unauthorized" }, 401);
     }
 
+    const hasAppleIdentity = Boolean(
+      user.identities?.some((identity) => identity.provider === "apple"),
+    );
+
+    if (hasAppleIdentity) {
+      const revocation = await admin
+        .from("apple_revocation_tokens")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (revocation.error) throw revocation.error;
+      if (!revocation.data) {
+        return json({
+          requiresAppleReauth: true,
+          message:
+            "Confirm the Apple account linked to CalledOut before requesting deletion.",
+        });
+      }
+    }
+
     const scheduledFor = new Date(Date.now() + 30 * 86_400_000).toISOString();
 
     const request = await admin.from("account_deletion_requests").upsert(
@@ -43,6 +64,9 @@ Deno.serve(async (req) => {
         scheduled_for: scheduledFor,
         cancelled_at: null,
         completed_at: null,
+        attempts: 0,
+        last_attempt_at: null,
+        last_error: null,
       },
       { onConflict: "user_id" },
     );
@@ -69,10 +93,11 @@ Deno.serve(async (req) => {
       action: "account_deletion_requested",
       entity_type: "profile",
       entity_id: user.id,
+      after_state: { scheduled_for: scheduledFor, apple: hasAppleIdentity },
     });
     if (audit.error) console.error("Deletion audit failed", audit.error);
 
-    return json({ scheduledFor });
+    return json({ scheduledFor, requiresAppleReauth: false });
   } catch (error) {
     console.error("request-account-deletion failed", error);
     return json(
