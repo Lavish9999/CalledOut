@@ -235,9 +235,6 @@ export default function Wall() {
   const previewAvailable = __DEV__;
 
   useEffect(() => analytics.capture("wall_viewed"), []);
-  useEffect(() => {
-    if (!previewAvailable && preview) setPreview(false);
-  }, [preview, previewAvailable]);
 
   const refetchWall = query.refetch;
 
