@@ -1,3 +1,4 @@
+import { Linking } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
 import {
@@ -10,6 +11,8 @@ import {
 } from "../../../components/ui";
 import { useSession } from "../../../providers/session";
 import { colors, spacing } from "../../../theme/tokens";
+
+const SUPPORT_EMAIL = "robbieyisa2@icloud.com";
 
 type DocumentKey = "privacy" | "terms" | "community";
 
@@ -30,13 +33,13 @@ const documents: Record<DocumentKey, LegalDocument> = {
         title: "Information you provide",
         paragraphs: [
           "CalledOut stores account information, your profile, commitments, circle membership, reactions, reports, support requests, and the proof you choose to submit.",
-          "Fresh proof includes in-app photos, timestamps, and randomized verification prompts. Camera-roll photos are not accepted as standard proof.",
+          "Fresh proof includes in-app photos, timestamps, and randomized prompts. Camera-roll photos are not accepted as standard proof. Submitted photos may be reviewed by eligible circle members or authorized CalledOut moderators.",
         ],
       },
       {
         title: "How information is used",
         paragraphs: [
-          "We use this information to operate commitments, verify proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.",
+          "We use this information to operate commitments, process and review proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.",
           "CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and App Store purchases.",
         ],
       },
@@ -50,7 +53,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Retention and deletion",
         paragraphs: [
-          "You can request account deletion from Settings. Your social visibility is removed and the account enters the deletion process.",
+          "You can request account deletion from Settings. Your social visibility is removed immediately and the account enters a 30-day deletion process. Proof and profile media are removed when deletion is completed.",
           "Limited billing, security, fraud-prevention, audit, or legal records may be retained when required to protect users, resolve disputes, or comply with law. Deleting CalledOut does not automatically cancel an App Store subscription.",
         ],
       },
@@ -58,7 +61,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
         title: "Your choices",
         paragraphs: [
           "You can change public visibility, manage blocked accounts, report safety concerns, restore purchases, manage your subscription, and request account deletion inside the app.",
-          "Signed-in users can send privacy questions through Settings → Contact support.",
+          `Email ${SUPPORT_EMAIL} for privacy or account questions when you cannot access the signed-in support form.`,
         ],
       },
     ],
@@ -71,8 +74,15 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Using CalledOut",
         paragraphs: [
-          "You are responsible for your account, the commitments you create, and the content you submit. Use accurate proof and do not attempt to manipulate verification, impersonate another person, or interfere with the service.",
+          "You are responsible for your account, the commitments you create, and the content you submit. Use authentic proof and do not impersonate another person or interfere with the service.",
           "CalledOut is an accountability tool, not medical advice, emergency assistance, or a guarantee of fitness results. Choose activities appropriate for your health and circumstances.",
+        ],
+      },
+      {
+        title: "Proof review",
+        paragraphs: [
+          "Fresh in-app capture and timing checks do not by themselves prove that a workout occurred. Eligible circle members or authorized CalledOut moderators may review the requested prompt and workout environment before a promise is approved.",
+          "Review decisions may be corrected through safety, dispute, and moderation processes. Do not submit people who did not consent to being photographed.",
         ],
       },
       {
@@ -93,13 +103,13 @@ const documents: Record<DocumentKey, LegalDocument> = {
         title: "Service changes and responsibility",
         paragraphs: [
           "Features may change as CalledOut improves. We work to keep the service available and accurate, but network, device, App Store, and third-party service failures can occur.",
-          "To the extent permitted by law, CalledOut is provided without guarantees that every verification, notification, ranking, or insight will be uninterrupted or error-free.",
+          "To the extent permitted by law, CalledOut is provided without guarantees that every notification, ranking, review, or insight will be uninterrupted or error-free.",
         ],
       },
       {
         title: "Questions",
         paragraphs: [
-          "Signed-in users can submit questions through Settings → Contact support.",
+          `Signed-in users can submit questions through Settings → Contact support, or email ${SUPPORT_EMAIL}.`,
         ],
       },
     ],
@@ -121,6 +131,13 @@ const documents: Record<DocumentKey, LegalDocument> = {
         paragraphs: [
           "Proof must be your own and must not contain sexual content, graphic injury, illegal activity, private information, or people who did not consent to being photographed.",
           "Do not fake proof, reuse another person's content, manipulate timestamps, impersonate users, spam circles, or coordinate false reports.",
+        ],
+      },
+      {
+        title: "Review proof fairly",
+        paragraphs: [
+          "Approve or reject proof based only on whether the submitted photo reasonably shows the requested prompt and workout environment within the commitment window.",
+          "Never judge proof based on body shape, weight, disability, athletic ability, clothing, or workout intensity.",
         ],
       },
       {
@@ -164,7 +181,7 @@ export default function LegalDocumentScreen() {
       />
 
       <Text variant="caption" style={{ color: colors.textSecondary }}>
-        Last updated July 21, 2026
+        Last updated July 22, 2026
       </Text>
 
       {document.sections.map((section) => (
@@ -178,9 +195,15 @@ export default function LegalDocumentScreen() {
         </Card>
       ))}
 
+      <Button
+        title="Email CalledOut support"
+        variant="secondary"
+        onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+      />
+
       {session ? (
         <Button
-          title="Contact support"
+          title="Contact support in the app"
           variant="secondary"
           onPress={() => router.push("/settings/support" as never)}
         />
