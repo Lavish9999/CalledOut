@@ -13,7 +13,7 @@ import {
   Screen,
   Text,
 } from "../../components/ui";
-import { getCircles } from "../../features/circles/api";
+import { getCircleOverview } from "../../features/circles/overview";
 import { getPlanOverview } from "../../features/subscription/api";
 import { qk } from "../../lib/query";
 import { shortDateLabel, timeLabel } from "../../lib/date";
@@ -53,7 +53,10 @@ function CircleRolePill({ role }: { role?: string }) {
 }
 
 export default function Circles() {
-  const query = useQuery({ queryKey: qk.circles, queryFn: getCircles });
+  const query = useQuery({
+    queryKey: qk.circles,
+    queryFn: getCircleOverview,
+  });
   const planQuery = useQuery({ queryKey: qk.plan, queryFn: getPlanOverview });
 
   const refetchCircles = query.refetch;
@@ -158,6 +161,8 @@ export default function Circles() {
         <>
           {query.data.map((circle) => {
             const memberCount = circle.member_count ?? 0;
+            const resolvedCount = circle.resolved_count ?? 0;
+            const hasResults = resolvedCount > 0;
 
             return (
               <Pressable
@@ -219,13 +224,15 @@ export default function Circles() {
                     </View>
                     <View style={{ flex: 1, gap: spacing.xxs }}>
                       <Text variant="section">
-                        {circle.average_completion_rate ?? 0}%
+                        {hasResults
+                          ? `${circle.average_completion_rate ?? 0}%`
+                          : "—"}
                       </Text>
                       <Text
                         variant="caption"
                         style={{ color: colors.textSecondary }}
                       >
-                        consistency
+                        {hasResults ? "consistency" : "No results yet"}
                       </Text>
                     </View>
                     <View style={{ flex: 1, gap: spacing.xxs }}>
