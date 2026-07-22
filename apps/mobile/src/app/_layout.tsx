@@ -15,13 +15,15 @@ function Guard() {
     if (loading || error) return;
 
     const group = segments[0];
+    const isPublicLegalRoute = group === "legal";
 
-    if (!session && group !== "(auth)") {
+    if (!session && group !== "(auth)" && !isPublicLegalRoute) {
       router.replace("/(auth)");
     } else if (
       session &&
       !profile?.onboarding_completed_at &&
-      group !== "(onboarding)"
+      group !== "(onboarding)" &&
+      !isPublicLegalRoute
     ) {
       router.replace("/(onboarding)");
     } else if (
@@ -55,6 +57,7 @@ function Guard() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="auth/callback" />
       <Stack.Screen name="auth/reset" />
+      <Stack.Screen name="legal/[document]" options={{ presentation: "card" }} />
       <Stack.Screen name="commitment/new" options={{ presentation: "modal" }} />
       <Stack.Screen name="commitment/[id]" options={{ presentation: "card" }} />
       <Stack.Screen
@@ -68,6 +71,13 @@ function Guard() {
       <Stack.Screen name="profile/history" options={{ presentation: "card" }} />
       <Stack.Screen name="paywall" options={{ presentation: "modal" }} />
       <Stack.Screen name="settings/index" options={{ presentation: "card" }} />
+      <Stack.Screen name="settings/report" options={{ presentation: "modal" }} />
+      <Stack.Screen name="settings/blocked" options={{ presentation: "card" }} />
+      <Stack.Screen name="settings/support" options={{ presentation: "card" }} />
+      <Stack.Screen
+        name="settings/legal/[document]"
+        options={{ presentation: "card" }}
+      />
       <Stack.Screen
         name="redemption/[id]"
         options={{ presentation: "modal" }}
