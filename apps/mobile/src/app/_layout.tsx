@@ -14,7 +14,7 @@ function Guard() {
   useEffect(() => {
     if (loading || error) return;
 
-    const group = segments[0];
+    const group = String(segments[0] ?? "");
     const isPublicLegalRoute = group === "legal";
 
     if (!session && group !== "(auth)" && !isPublicLegalRoute) {
