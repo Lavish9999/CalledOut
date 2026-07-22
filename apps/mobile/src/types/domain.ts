@@ -32,7 +32,16 @@ export type WorkoutType =
 
 export type CircleRole = "owner" | "moderator" | "member";
 export type RedemptionStatus =
-  "available" | "in_progress" | "completed" | "expired" | "waived";
+  | "available"
+  | "in_progress"
+  | "completed"
+  | "expired"
+  | "waived";
+export type AccountStatus =
+  | "active"
+  | "suspended"
+  | "banned"
+  | "deletion_pending";
 
 export interface Profile {
   id: string;
@@ -48,6 +57,7 @@ export interface Profile {
   public_profile_opt_in: boolean;
   public_wall_opt_in: boolean;
   is_admin: boolean;
+  account_status: AccountStatus;
 }
 
 export interface CommitmentSchedule {
@@ -83,8 +93,8 @@ export interface Commitment {
   status: CommitmentStatus;
   grace_period_minutes: number;
   verified_at: string | null;
-  missed_at?: string | null;
-  circle?: { name: string } | null;
+  missed_at: string | null;
+  circle: { name: string } | null;
 }
 
 export interface RedemptionLink {
@@ -103,18 +113,8 @@ export interface TodayDashboard {
   redemptions: RedemptionLink[];
 }
 
-export interface ProfileRecord {
-  scheduled: number;
-  completed: number;
-  missed: number;
-  redemptionsCompleted: number;
-  completionRate: number;
-  currentStreak: number;
-  longestStreak: number;
-}
-
 export interface CommitmentDetail extends Commitment {
-  proof?: {
+  proof: {
     id: string;
     status: string;
     verification_score: number | null;
