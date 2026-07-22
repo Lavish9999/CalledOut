@@ -59,8 +59,28 @@ jobs:
       - name: Start a fresh local database
         run: supabase db start
 
-      - name: Run all database behavior tests
-        run: supabase test db
+      - name: Capture database behavior test output
+        id: database-check
+        shell: bash
+        run: |
+          set +e
+          supabase test db > database-test.log 2>&1
+          status=$?
+          cat database-test.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload database diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-test-log
+          path: database-test.log
+          if-no-files-found: error
+
+      - name: Fail when database behavior tests fail
+        if: steps.database-check.outputs.status != '0'
+        run: exit 1
 
       - name: Stop local Supabase
         if: always()
@@ -80,11 +100,33 @@ jobs:
           deno-version: v2.x
           cache: true
 
-      - name: Typecheck every Edge Function
+      - name: Capture Edge Function typecheck output
+        id: edge-check
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          : > edge-function-check.log
+          status=0
           while IFS= read -r -d '' file; do
-            echo "Checking $file"
-            deno check "$file"
+            echo "===== $file =====" | tee -a edge-function-check.log
+            deno check "$file" >> edge-function-check.log 2>&1
+            current=$?
+            if [ "$current" -ne 0 ]; then
+              status=1
+            fi
           done < <(find supabase/functions -name index.ts -print0 | sort -z)
+          cat edge-function-check.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload Edge Function diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-function-check-log
+          path: edge-function-check.log
+          if-no-files-found: error
+
+      - name: Fail when Edge Function typechecking fails
+        if: steps.edge-check.outputs.status != '0'
+        run: exit 1
