@@ -3,7 +3,7 @@
     "name": "CalledOut",
     "slug": "calledout",
     "scheme": "calledout",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "light",
@@ -15,10 +15,6 @@
       "infoPlist": {
         "NSCameraUsageDescription": "CalledOut uses the camera to capture fresh workout proof.",
         "NSLocationWhenInUseUsageDescription": "CalledOut can verify that proof was captured near an approved workout location. Exact location is not shown to friends.",
-        "NSPhotoLibraryUsageDescription": "CalledOut uses your photo library only when you choose a profile or circle image.",
-        "UIBackgroundModes": [
-          "remote-notification"
-        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
