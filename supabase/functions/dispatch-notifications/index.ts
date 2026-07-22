@@ -148,7 +148,7 @@ async function checkReceipts(admin: AdminClient) {
 }
 
 Deno.serve(async (req) => {
-  const secret = Deno.env.get("DEADLINE_JOB_SECRET");
+  const secret = Deno.env.get("NOTIFICATION_JOB_SECRET");
   if (!secret || req.headers.get("x-job-secret") !== secret) {
     return json({ error: "Unauthorized" }, 401);
   }
