@@ -69,6 +69,7 @@ export const wallPreviewEntries: WallEntry[] = [
 
 export const wallPreviewMember = {
   profile: {
+    id: "preview-user-1",
     display_name: "Jordan",
     username: "jordanmoves",
     avatar_path: null,
