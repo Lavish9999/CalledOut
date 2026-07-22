@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
 
 import { Button, Card, Field, Header, Screen, Text } from "../../components/ui";
-import { joinCircle } from "../../features/circles/api";
+import { joinCircle } from "../../features/circles/join";
 import { queryClient, qk } from "../../lib/query";
 import { analytics } from "../../lib/analytics";
 import { colors } from "../../theme/tokens";
