@@ -14,11 +14,14 @@ import {
   Text,
 } from "../../components/ui";
 import { getCircleOverview } from "../../features/circles/overview";
+import { getPendingCircleProofReviews } from "../../features/proofs/review";
 import { getPlanOverview } from "../../features/subscription/api";
 import { qk } from "../../lib/query";
 import { shortDateLabel, timeLabel } from "../../lib/date";
 import { colors, radius, spacing } from "../../theme/tokens";
 import type { ActivityEvent } from "../../types/domain";
+
+const PROOF_REVIEWS_KEY = ["proof-reviews"] as const;
 
 function latestActivityCopy(event: ActivityEvent | null | undefined) {
   if (!event) return "No circle activity yet.";
@@ -58,15 +61,21 @@ export default function Circles() {
     queryFn: getCircleOverview,
   });
   const planQuery = useQuery({ queryKey: qk.plan, queryFn: getPlanOverview });
+  const reviewsQuery = useQuery({
+    queryKey: PROOF_REVIEWS_KEY,
+    queryFn: getPendingCircleProofReviews,
+  });
 
   const refetchCircles = query.refetch;
   const refetchPlan = planQuery.refetch;
+  const refetchReviews = reviewsQuery.refetch;
 
   useFocusEffect(
     useCallback(() => {
       refetchCircles();
       refetchPlan();
-    }, [refetchCircles, refetchPlan]),
+      refetchReviews();
+    }, [refetchCircles, refetchPlan, refetchReviews]),
   );
 
   const visibleCircleCount = query.data?.length ?? 0;
@@ -77,6 +86,12 @@ export default function Circles() {
       ? "Circle limit reached"
       : "Unlock more circles"
     : "Create circle";
+  const pendingReviews = reviewsQuery.data ?? [];
+  const nextReview =
+    pendingReviews.find((review) => review.myVote === null) ?? pendingReviews[0];
+  const unvotedCount = pendingReviews.filter(
+    (review) => review.myVote === null,
+  ).length;
 
   const openCircleCreation = () => {
     if (!atLimit) {
@@ -148,6 +163,35 @@ export default function Circles() {
           />
         </View>
       </View>
+
+      {nextReview ? (
+        <Card style={{ backgroundColor: colors.dark, borderColor: colors.dark }}>
+          <Text variant="label" style={{ color: colors.surfaceMuted }}>
+            PROOF REVIEW · {pendingReviews.length} OPEN
+          </Text>
+          <Text variant="section" style={{ color: colors.surface }}>
+            {unvotedCount > 0
+              ? `${unvotedCount} fresh ${unvotedCount === 1 ? "proof needs" : "proofs need"} your vote.`
+              : "Your vote is recorded. The circle decision is still open."}
+          </Text>
+          <Text style={{ color: colors.surfaceMuted }}>
+            {nextReview.memberName} submitted {nextReview.commitmentTitle} in {nextReview.circleName}.
+          </Text>
+          <Button
+            title={nextReview.myVote ? "Open review" : "Review next proof"}
+            variant="secondary"
+            onPress={() =>
+              router.push(`/circle/review/${nextReview.id}` as never)
+            }
+          />
+        </Card>
+      ) : null}
+
+      {reviewsQuery.error ? (
+        <Text variant="caption" style={{ color: colors.missed }}>
+          Proof reviews could not be loaded. Pull to refresh or reopen Circles.
+        </Text>
+      ) : null}
 
       {query.isLoading ? (
         <Loading />
