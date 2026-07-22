@@ -131,6 +131,9 @@ Deno.serve(async (req) => {
     }
     if (!authorization) return json({ error: "Unauthorized" }, 401);
 
+    const requestBody = await req.json().catch(() => ({}));
+    const force = requestBody?.force === true;
+
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authorization } },
       auth: { persistSession: false, autoRefreshToken: false },
@@ -141,6 +144,62 @@ Deno.serve(async (req) => {
     } = await userClient.auth.getUser();
 
     if (userError || !user) return json({ error: "Unauthorized" }, 401);
+
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    if (!force) {
+      const [subscriptionResult, entitlementResult] = await Promise.all([
+        admin
+          .from("subscriptions")
+          .select(
+            "product_id,status,current_period_ends_at,will_renew,is_sandbox,management_url,last_verified_at",
+          )
+          .eq("user_id", user.id)
+          .is("deleted_at", null)
+          .order("last_verified_at", { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("entitlements")
+          .select("status,expires_at")
+          .eq("user_id", user.id)
+          .eq("identifier", "pro")
+          .maybeSingle(),
+      ]);
+
+      if (subscriptionResult.error) throw subscriptionResult.error;
+      if (entitlementResult.error) throw entitlementResult.error;
+
+      const verifiedAt = subscriptionResult.data?.last_verified_at
+        ? new Date(subscriptionResult.data.last_verified_at).getTime()
+        : 0;
+      const fresh = Date.now() - verifiedAt < 5 * 60_000;
+
+      if (fresh) {
+        const expiresAt = entitlementResult.data?.expires_at
+          ? new Date(entitlementResult.data.expires_at)
+          : null;
+        const isPro =
+          entitlementResult.data?.status === "active" &&
+          (!expiresAt || expiresAt.getTime() > Date.now());
+
+        return json({
+          ok: true,
+          cached: true,
+          is_pro: isPro,
+          product_id: subscriptionResult.data?.product_id ?? null,
+          subscription_status: subscriptionResult.data?.status ?? null,
+          current_period_ends_at:
+            subscriptionResult.data?.current_period_ends_at ?? null,
+          will_renew: subscriptionResult.data?.will_renew ?? null,
+          is_sandbox: subscriptionResult.data?.is_sandbox ?? null,
+          management_url: subscriptionResult.data?.management_url ?? null,
+          verified_at: subscriptionResult.data?.last_verified_at,
+        });
+      }
+    }
 
     const revenueCatResponse = await fetch(
       `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(user.id)}`,
@@ -167,9 +226,6 @@ Deno.serve(async (req) => {
     const customer = await revenueCatResponse.json();
     const subscriber = (customer?.subscriber ?? {}) as RevenueCatSubscriber;
     const state = subscriptionState(subscriber);
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
     const verifiedAt = new Date().toISOString();
     let sourceSubscriptionId: string | null = null;
 
@@ -224,6 +280,18 @@ Deno.serve(async (req) => {
       return json({ error: "Could not update subscription access" }, 500);
     }
 
+    if (state.isActive) {
+      const circleUpgrade = await admin
+        .from("circles")
+        .update({ member_limit: 20, updated_at: verifiedAt })
+        .eq("owner_id", user.id)
+        .lt("member_limit", 20)
+        .is("deleted_at", null);
+      if (circleUpgrade.error) {
+        console.error("Could not upgrade Pro circle limits", circleUpgrade.error);
+      }
+    }
+
     await admin.from("audit_logs").insert({
       actor_id: user.id,
       action: "revenuecat_entitlement_reconciled",
@@ -234,11 +302,13 @@ Deno.serve(async (req) => {
         product_id: state.productId,
         status: state.status,
         expires_at: state.expiresAt?.toISOString() ?? null,
+        forced: force,
       },
     });
 
     return json({
       ok: true,
+      cached: false,
       is_pro: state.isActive,
       product_id: state.productId,
       subscription_status: state.status,
