@@ -31,7 +31,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.request-account-deletion]
 verify_jwt = false
-
+[functions.store-apple-revocation-token]
+verify_jwt = false
 [functions.dispatch-notifications]
 verify_jwt = false
 [functions.process-account-deletions]
