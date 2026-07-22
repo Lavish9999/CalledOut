@@ -17,6 +17,30 @@ function callbackUrl() {
   });
 }
 
+function appleCancelled(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.message.includes("ERR_REQUEST_CANCELED") ||
+      error.message.toLowerCase().includes("canceled"))
+  );
+}
+
+async function storeAppleRevocationCode(authorizationCode: string) {
+  const { data, error } = await supabase.functions.invoke(
+    "store-apple-revocation-token",
+    { body: { authorizationCode } },
+  );
+
+  if (error) throw error;
+  if (!data?.ok) {
+    throw new Error(
+      typeof data?.error === "string"
+        ? data.error
+        : "Apple account deletion authorization could not be prepared.",
+    );
+  }
+}
+
 export async function signInWithGoogle(): Promise<SocialAuthResult> {
   const redirectTo = callbackUrl();
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -87,15 +111,42 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
     });
     if (error) throw error;
 
+    if (credential.authorizationCode) {
+      await storeAppleRevocationCode(credential.authorizationCode).catch(
+        (storageError) => {
+          console.warn(
+            "Apple account deletion credential could not be stored",
+            storageError,
+          );
+        },
+      );
+    }
+
     return { cancelled: false };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message.includes("ERR_REQUEST_CANCELED") ||
-        error.message.toLowerCase().includes("canceled"))
-    ) {
-      return { cancelled: true };
+    if (appleCancelled(error)) return { cancelled: true };
+    throw error;
+  }
+}
+
+export async function prepareAppleRevocationForDeletion() {
+  if (Platform.OS !== "ios") {
+    throw new Error("Apple account confirmation requires an iPhone.");
+  }
+
+  try {
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [],
+    });
+
+    if (!credential.authorizationCode) {
+      throw new Error("Apple did not return an account authorization code.");
     }
+
+    await storeAppleRevocationCode(credential.authorizationCode);
+    return { cancelled: false };
+  } catch (error) {
+    if (appleCancelled(error)) return { cancelled: true };
     throw error;
   }
 }
