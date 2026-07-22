@@ -11,7 +11,11 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-type StorageClient = ReturnType<typeof createClient>;
+// Database types are not generated for Edge Functions yet. Use explicit row
+// contracts and leave the Supabase client unparameterized to avoid `never`.
+type StorageClient = any;
+type DeletionRequest = { id: string; user_id: string; attempts: number };
+type AppleTokenRow = { encrypted_refresh_token: string };
 type AppleRevocationResult = {
   hadAppleIdentity: boolean;
   revoked: boolean;
@@ -37,12 +41,13 @@ async function removeStoragePrefix(
       throw new Error(`${bucket} listing failed: ${error.message}`);
     }
 
-    if (!data?.length) return removed;
+    const entries = (data ?? []) as Array<{ id?: string | null; name: string }>;
+    if (!entries.length) return removed;
 
     const files: string[] = [];
     const folders: string[] = [];
 
-    for (const entry of data) {
+    for (const entry of entries) {
       const path = `${prefix}/${entry.name}`;
       if (entry.id) files.push(path);
       else folders.push(path);
@@ -110,7 +115,7 @@ async function revokeAppleIdentity(
 
     const hasAppleIdentity = Boolean(
       userResult.data.user?.identities?.some(
-        (identity) => identity.provider === "apple",
+        (identity: { provider?: string }) => identity.provider === "apple",
       ),
     );
     if (!hasAppleIdentity) {
@@ -128,12 +133,13 @@ async function revokeAppleIdentity(
       .maybeSingle();
 
     if (tokenResult.error) throw tokenResult.error;
-    if (!tokenResult.data?.encrypted_refresh_token) {
+    const tokenRow = tokenResult.data as AppleTokenRow | null;
+    if (!tokenRow?.encrypted_refresh_token) {
       throw new Error("Apple account revocation authorization is unavailable");
     }
 
     const refreshToken = await decryptAppleRefreshToken(
-      tokenResult.data.encrypted_refresh_token,
+      tokenRow.encrypted_refresh_token,
     );
     await revokeAppleRefreshToken(refreshToken);
 
@@ -168,11 +174,11 @@ Deno.serve(async (req) => {
     return json({ error: "Required Supabase secrets are missing" }, 500);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
+  const admin: StorageClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: requests, error } = await admin
+  const requestResult = await admin
     .from("account_deletion_requests")
     .select("id,user_id,attempts")
     .is("cancelled_at", null)
@@ -182,12 +188,15 @@ Deno.serve(async (req) => {
     .order("scheduled_for", { ascending: true })
     .limit(25);
 
-  if (error) return json({ error: error.message }, 500);
+  if (requestResult.error) {
+    return json({ error: requestResult.error.message }, 500);
+  }
+  const requests = (requestResult.data ?? []) as DeletionRequest[];
 
   let completed = 0;
   const failures: Array<{ userId: string; error: string }> = [];
 
-  for (const item of requests ?? []) {
+  for (const item of requests) {
     try {
       const attemptUpdate = await admin
         .from("account_deletion_requests")
