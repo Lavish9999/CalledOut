@@ -25,7 +25,13 @@ const SAFE_NOTIFICATION_ROUTES = [
 export function notificationRoute(
   response: Notifications.NotificationResponse | null | undefined,
 ) {
-  const value = response?.notification.request.content.data?.route;
+  if (
+    response?.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER
+  ) {
+    return null;
+  }
+
+  const value = response.notification.request.content.data?.route;
   if (typeof value !== "string") return null;
   if (!value.startsWith("/")) return null;
   if (!SAFE_NOTIFICATION_ROUTES.some((prefix) => value.startsWith(prefix))) {
