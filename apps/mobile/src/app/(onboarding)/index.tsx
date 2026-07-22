@@ -243,8 +243,8 @@ export default function Onboarding() {
           <Card>
             <Text variant="card">Safety controls</Text>
             <Text>
-              Reports are private. Blocking removes both people from each
-              other's eligible accountability and social surfaces.
+              Reports are private. Blocking separates both people across eligible
+              accountability and social surfaces.
             </Text>
           </Card>
           <Card>
