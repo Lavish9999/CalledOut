@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
+  Button,
   Card,
   EmptyState,
   Header,
@@ -12,10 +13,12 @@ import {
   StatusPill,
   Text,
 } from "../../components/ui";
+import { blockUser } from "../../features/moderation/api";
 import { getMemberWall } from "../../features/wall/api";
 import { wallPreviewMember } from "../../features/wall/preview";
-import { qk } from "../../lib/query";
+import { queryClient, qk } from "../../lib/query";
 import { dateLabel } from "../../lib/date";
+import { useSession } from "../../providers/session";
 import { colors, radius, spacing } from "../../theme/tokens";
 import type { WallMissDetail } from "../../types/domain";
 
@@ -110,6 +113,7 @@ export default function WallMemberScreen() {
     circleId: string;
     preview?: string;
   }>();
+  const { session } = useSession();
   const previewMode = preview === "true";
   const [filter, setFilter] = useState<FilterKey>("all");
 
@@ -117,6 +121,28 @@ export default function WallMemberScreen() {
     queryKey: qk.wallMember(userId, circleId),
     queryFn: () => getMemberWall(userId, circleId),
     enabled: Boolean(userId && circleId && !previewMode),
+  });
+
+  const blockMutation = useMutation({
+    mutationFn: blockUser,
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: qk.wallMember(userId, circleId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["wall"] }),
+        queryClient.invalidateQueries({ queryKey: qk.circles }),
+        queryClient.invalidateQueries({ queryKey: ["activity"] }),
+        queryClient.invalidateQueries({ queryKey: qk.blocked }),
+      ]);
+      Alert.alert(
+        "User blocked",
+        "This person is now hidden from your eligible profiles, activity, commitments, proof, and Wall surfaces.",
+        [{ text: "Done", onPress: router.back }],
+        { cancelable: false },
+      );
+    },
+    onError: (error) => {
+      Alert.alert("Could not block this user", error.message);
+    },
   });
 
   const data = previewMode ? wallPreviewMember : query.data;
@@ -163,6 +189,23 @@ export default function WallMemberScreen() {
   }
 
   const profile = data!.profile;
+  const canUseSafetyControls =
+    !previewMode && Boolean(session?.user.id) && session?.user.id !== profile.id;
+
+  function confirmBlock() {
+    Alert.alert(
+      `Block @${profile.username}?`,
+      "You will stop seeing each other's eligible profiles, activity, commitments, proof, and Wall records. You can reverse this later in Settings.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: () => blockMutation.mutate(profile.id),
+        },
+      ],
+    );
+  }
 
   return (
     <Screen>
@@ -177,9 +220,40 @@ export default function WallMemberScreen() {
       <Card style={{ backgroundColor: colors.surfaceMuted }}>
         <Text variant="bodyStrong">Record summary</Text>
         <Text style={{ color: colors.textSecondary }}>
-          Misses stay on the record. Redemption shows who answered the callout, but it never erases the original miss.
+          Misses stay on the record. Redemption shows who answered the callout,
+          but it never erases the original miss.
         </Text>
       </Card>
+
+      {canUseSafetyControls ? (
+        <Card style={{ gap: spacing.sm }}>
+          <Text variant="bodyStrong">Safety controls</Text>
+          <Text style={{ color: colors.textSecondary }}>
+            Reports are private. Blocking removes this person from your eligible
+            social and accountability surfaces immediately.
+          </Text>
+          <Button
+            title="Report this user"
+            variant="secondary"
+            onPress={() =>
+              router.push({
+                pathname: "/settings/report",
+                params: {
+                  userId: profile.id,
+                  username: profile.username,
+                  circleId,
+                },
+              } as never)
+            }
+          />
+          <Button
+            title="Block this user"
+            variant="danger"
+            loading={blockMutation.isPending}
+            onPress={confirmBlock}
+          />
+        </Card>
+      ) : null}
 
       <FilterTabs value={filter} onChange={setFilter} counts={counts} />
 
@@ -209,7 +283,11 @@ export default function WallMemberScreen() {
               </Text>
 
               <View
-                style={{ height: 1, backgroundColor: colors.border, marginVertical: spacing.xs }}
+                style={{
+                  height: 1,
+                  backgroundColor: colors.border,
+                  marginVertical: spacing.xs,
+                }}
               />
 
               {miss.redemption?.completed_at ? (
