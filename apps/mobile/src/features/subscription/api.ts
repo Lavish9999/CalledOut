@@ -39,10 +39,10 @@ export async function getPlanOverview(): Promise<PlanOverview> {
   return toPlanOverview((data ?? {}) as Record<string, unknown>);
 }
 
-export async function syncRevenueCatEntitlement() {
+export async function syncRevenueCatEntitlement(options?: { force?: boolean }) {
   const { data, error } = await supabase.functions.invoke(
     "sync-revenuecat-entitlement",
-    { body: {} },
+    { body: { force: options?.force === true } },
   );
 
   if (error) throw error;
@@ -56,6 +56,7 @@ export async function syncRevenueCatEntitlement() {
 
   return data as {
     ok: true;
+    cached?: boolean;
     is_pro: boolean;
     product_id: string | null;
     subscription_status: string | null;
@@ -71,6 +72,7 @@ export async function reconcilePlanAccess(options?: {
   expectPro?: boolean;
   attempts?: number;
   delayMs?: number;
+  force?: boolean;
 }): Promise<PlanOverview> {
   const attempts = Math.max(1, options?.attempts ?? 2);
   const delayMs = Math.max(0, options?.delayMs ?? 700);
@@ -78,7 +80,7 @@ export async function reconcilePlanAccess(options?: {
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await syncRevenueCatEntitlement();
+      await syncRevenueCatEntitlement({ force: options?.force });
       const plan = await getPlanOverview();
 
       if (!options?.expectPro || plan.isPro) return plan;
