@@ -11,8 +11,8 @@ function copyForStatus(status?: string) {
   if (status === "deletion_pending") {
     return {
       eyebrow: "DELETION PENDING",
-      title: "This account is being removed.",
-      body: "Your public visibility and notifications are disabled while the deletion request is processed. Deleting CalledOut does not cancel an App Store subscription.",
+      title: "This account is scheduled for deletion.",
+      body: "Your public visibility and notifications are disabled during the 30-day deletion period. Deleting CalledOut does not cancel an App Store subscription.",
     };
   }
 
@@ -57,7 +57,7 @@ export default function AccountRestricted() {
       <Button
         title="Read Community Guidelines"
         variant="secondary"
-        onPress={() => router.push("/legal/community-guidelines" as never)}
+        onPress={() => router.push("/legal/community" as never)}
       />
       <Button title="Sign out" variant="ghost" onPress={signOut} />
     </Screen>
