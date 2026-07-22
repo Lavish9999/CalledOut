@@ -9,6 +9,7 @@ import { createRecurringCommitment } from "../../features/commitments/api";
 import { useSession } from "../../providers/session";
 import { analytics } from "../../lib/analytics";
 import { registerPushToken } from "../../lib/notifications";
+
 const workouts: [WorkoutType, string][] = [
   ["gym", "Gym"],
   ["running", "Running"],
@@ -21,11 +22,13 @@ const workouts: [WorkoutType, string][] = [
   ["other", "Other"],
 ];
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 export default function Onboarding() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const st = useOnboarding();
   const { session, refreshProfile } = useSession();
+
   async function finish() {
     setLoading(true);
     try {
@@ -58,7 +61,9 @@ export default function Onboarding() {
       setLoading(false);
     }
   }
+
   const progress = (step + 1) / 5;
+
   return (
     <Screen>
       <View
@@ -73,6 +78,7 @@ export default function Onboarding() {
           }}
         />
       </View>
+
       {step === 0 ? (
         <>
           <Header eyebrow="1 OF 5" title="How it works" />
@@ -101,20 +107,20 @@ export default function Onboarding() {
           <Field
             label="Display name"
             value={st.displayName}
-            onChangeText={(v) => st.set("displayName", v)}
+            onChangeText={(value) => st.set("displayName", value)}
           />
           <Field
             label="Username"
             value={st.username}
             autoCapitalize="none"
-            onChangeText={(v) =>
-              st.set("username", v.replace(/[^a-zA-Z0-9_]/g, ""))
+            onChangeText={(value) =>
+              st.set("username", value.replace(/[^a-zA-Z0-9_]/g, ""))
             }
           />
           <Field
             label="Short bio (optional)"
             value={st.bio}
-            onChangeText={(v) => st.set("bio", v)}
+            onChangeText={(value) => st.set("bio", value)}
             multiline
           />
         </>
@@ -133,7 +139,7 @@ export default function Onboarding() {
                     st.set(
                       "workouts",
                       active
-                        ? st.workouts.filter((x) => x !== key)
+                        ? st.workouts.filter((workout) => workout !== key)
                         : [...st.workouts, key],
                     )
                   }
@@ -166,15 +172,17 @@ export default function Onboarding() {
           <View
             style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}
           >
-            {dayLabels.map((label, i) => {
-              const active = st.days.includes(i);
+            {dayLabels.map((label, index) => {
+              const active = st.days.includes(index);
               return (
                 <Pressable
                   key={label}
                   onPress={() =>
                     st.set(
                       "days",
-                      active ? st.days.filter((x) => x !== i) : [...st.days, i],
+                      active
+                        ? st.days.filter((day) => day !== index)
+                        : [...st.days, index],
                     )
                   }
                   style={{
@@ -202,16 +210,19 @@ export default function Onboarding() {
             label="Deadline hour (0–23)"
             value={String(st.deadlineHour)}
             keyboardType="number-pad"
-            onChangeText={(v) =>
-              st.set("deadlineHour", Math.min(23, Math.max(0, Number(v) || 0)))
+            onChangeText={(value) =>
+              st.set(
+                "deadlineHour",
+                Math.min(23, Math.max(0, Number(value) || 0)),
+              )
             }
           />
           <Field
             label="Minimum minutes"
             value={String(st.minimumDuration)}
             keyboardType="number-pad"
-            onChangeText={(v) =>
-              st.set("minimumDuration", Math.max(1, Number(v) || 1))
+            onChangeText={(value) =>
+              st.set("minimumDuration", Math.max(1, Number(value) || 1))
             }
           />
         </>
@@ -225,15 +236,15 @@ export default function Onboarding() {
           <Card>
             <Text variant="card">Camera</Text>
             <Text>
-              Fresh in-app proof only. Camera-roll photos cannot satisfy
-              standard commitments.
+              Fresh in-app proof only. Camera-roll photos cannot satisfy standard
+              commitments.
             </Text>
           </Card>
           <Card>
-            <Text variant="card">Location</Text>
+            <Text variant="card">Safety controls</Text>
             <Text>
-              Optional unless a commitment requires it. Friends see a
-              verification result, never your exact location.
+              Reports are private. Blocking removes both people from each
+              other's eligible accountability and social surfaces.
             </Text>
           </Card>
           <Card>
@@ -245,6 +256,7 @@ export default function Onboarding() {
           </Card>
         </>
       )}
+
       <View style={{ gap: spacing.sm, marginTop: "auto" }}>
         <Button
           title={step === 4 ? "Create first commitment" : "Continue"}
