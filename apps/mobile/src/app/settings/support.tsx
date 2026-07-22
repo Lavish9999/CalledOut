@@ -40,7 +40,7 @@ export default function SupportScreen() {
       <Card style={{ gap: spacing.xs }}>
         <Text variant="bodyStrong">For safety issues involving another person</Text>
         <Text style={{ color: colors.textSecondary }}>
-          Open that person's Wall history and use Report or Block. Those actions
+          Open that person’s Wall history and use Report or Block. Those actions
           include the account context needed for moderation.
         </Text>
       </Card>
