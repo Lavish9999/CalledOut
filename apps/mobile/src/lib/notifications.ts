@@ -16,6 +16,7 @@ Notifications.setNotificationHandler({
 
 const SAFE_NOTIFICATION_ROUTES = [
   "/commitment/",
+  "/redemption/",
   "/circle/review/",
   "/circle/",
   "/wall",
