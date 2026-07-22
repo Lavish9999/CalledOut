@@ -1,29 +1,144 @@
 import { supabase } from "../../lib/supabase";
 
-export type ProofReviewDetail = {
+export type ProofReviewSummary = {
   id: string;
-  status: string;
   capturedAt: string;
   prompt: string | null;
-  assetUrl: string;
-  commitmentId: string;
   commitmentTitle: string;
-  deadlineAt: string;
   circleId: string;
   circleName: string;
-  memberId: string;
   memberName: string;
   memberUsername: string;
   myVote: "accept" | "reject" | null;
 };
 
+export type ProofReviewDetail = ProofReviewSummary & {
+  status: string;
+  assetUrl: string;
+  commitmentId: string;
+  deadlineAt: string;
+  memberId: string;
+};
+
+async function requireUser() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!user) throw new Error("Sign in to review proof.");
+  return user;
+}
+
+export async function getPendingCircleProofReviews(): Promise<
+  ProofReviewSummary[]
+> {
+  const user = await requireUser();
+
+  const proofResult = await supabase
+    .from("proof_submissions")
+    .select("id,commitment_id,user_id,captured_at,liveness_prompt")
+    .eq("status", "circle_review")
+    .neq("user_id", user.id)
+    .is("deleted_at", null)
+    .order("captured_at", { ascending: true })
+    .limit(50);
+  if (proofResult.error) throw proofResult.error;
+  if (!proofResult.data?.length) return [];
+
+  const commitmentIds = [
+    ...new Set(proofResult.data.map((proof) => proof.commitment_id)),
+  ];
+  const userIds = [...new Set(proofResult.data.map((proof) => proof.user_id))];
+  const proofIds = proofResult.data.map((proof) => proof.id);
+
+  const [commitmentResult, profileResult, voteResult] = await Promise.all([
+    supabase
+      .from("commitments")
+      .select("id,title,circle_id")
+      .in("id", commitmentIds)
+      .not("circle_id", "is", null)
+      .is("deleted_at", null),
+    supabase
+      .from("profiles")
+      .select("id,display_name,username")
+      .in("id", userIds),
+    supabase
+      .from("verification_votes")
+      .select("proof_submission_id,vote")
+      .in("proof_submission_id", proofIds)
+      .eq("voter_id", user.id),
+  ]);
+
+  if (commitmentResult.error) throw commitmentResult.error;
+  if (profileResult.error) throw profileResult.error;
+  if (voteResult.error) throw voteResult.error;
+
+  const circleIds = [
+    ...new Set(
+      (commitmentResult.data ?? [])
+        .map((commitment) => commitment.circle_id)
+        .filter((circleId): circleId is string => Boolean(circleId)),
+    ),
+  ];
+  if (!circleIds.length) return [];
+
+  const circleResult = await supabase
+    .from("circles")
+    .select("id,name")
+    .in("id", circleIds)
+    .is("deleted_at", null);
+  if (circleResult.error) throw circleResult.error;
+
+  const commitments = new Map(
+    (commitmentResult.data ?? []).map((commitment) => [
+      commitment.id,
+      commitment,
+    ]),
+  );
+  const profiles = new Map(
+    (profileResult.data ?? []).map((profile) => [profile.id, profile]),
+  );
+  const circles = new Map(
+    (circleResult.data ?? []).map((circle) => [circle.id, circle]),
+  );
+  const votes = new Map(
+    (voteResult.data ?? []).map((vote) => [
+      vote.proof_submission_id,
+      vote.vote,
+    ]),
+  );
+
+  return proofResult.data.flatMap((proof) => {
+    const commitment = commitments.get(proof.commitment_id);
+    const profile = profiles.get(proof.user_id);
+    const circle = commitment?.circle_id
+      ? circles.get(commitment.circle_id)
+      : null;
+
+    if (!commitment?.circle_id || !profile || !circle) return [];
+
+    const vote = votes.get(proof.id);
+    return [
+      {
+        id: proof.id,
+        capturedAt: proof.captured_at,
+        prompt: proof.liveness_prompt,
+        commitmentTitle: commitment.title,
+        circleId: commitment.circle_id,
+        circleName: circle.name,
+        memberName: profile.display_name,
+        memberUsername: profile.username,
+        myVote: vote === "accept" || vote === "reject" ? vote : null,
+      },
+    ];
+  });
+}
+
 export async function getProofReview(
   submissionId: string,
 ): Promise<ProofReviewDetail> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Sign in to review proof.");
+  const user = await requireUser();
 
   const proofResult = await supabase
     .from("proof_submissions")
@@ -37,6 +152,9 @@ export async function getProofReview(
 
   if (proofResult.data.user_id === user.id) {
     throw new Error("You cannot review your own proof.");
+  }
+  if (!proofResult.data.asset_path) {
+    throw new Error("The proof image is unavailable.");
   }
 
   const commitmentResult = await supabase
