@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
 
@@ -13,6 +13,8 @@ import {
 } from "../../components/ui";
 import { submitSupportRequest } from "../../features/moderation/api";
 import { colors, spacing } from "../../theme/tokens";
+
+const SUPPORT_EMAIL = "robbieyisa2@icloud.com";
 
 export default function SupportScreen() {
   const [message, setMessage] = useState("");
@@ -32,16 +34,34 @@ export default function SupportScreen() {
       <Header
         eyebrow="SUPPORT"
         title="How can we help?"
-        subtitle="Send a private request to the CalledOut support queue."
+        subtitle="Send a private request to the CalledOut support queue. Typical response time is within two business days."
         backLabel="Settings"
         onBack={router.back}
       />
 
       <Card style={{ gap: spacing.xs }}>
+        <Text variant="bodyStrong">Direct email</Text>
+        <Text style={{ color: colors.textSecondary }}>
+          Locked out or unable to use the form? Email {SUPPORT_EMAIL}.
+        </Text>
+        <Button
+          title="Email CalledOut support"
+          variant="secondary"
+          onPress={() =>
+            Linking.openURL(
+              `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("CalledOut support request")}`,
+            )
+          }
+        />
+      </Card>
+
+      <Card style={{ gap: spacing.xs }}>
         <Text variant="bodyStrong">For safety issues involving another person</Text>
         <Text style={{ color: colors.textSecondary }}>
           Open that person’s Wall history and use Report or Block. Those actions
-          include the account context needed for moderation.
+          include the account context needed for moderation. For a credible threat,
+          doxxing, or non-consensual content, put “Urgent safety concern” in the
+          email subject. Contact local emergency services for immediate danger.
         </Text>
       </Card>
 
