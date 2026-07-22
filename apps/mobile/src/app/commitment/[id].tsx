@@ -17,12 +17,14 @@ import { dateLabel, timeLabel } from "../../lib/date";
 import { qk } from "../../lib/query";
 import { colors } from "../../theme/tokens";
 
-function proofResultCopy(status: string) {
+function proofResultCopy(status: string, hasCircle: boolean) {
   if (status === "verified") {
     return "Fresh proof passed the automated checks. Promise kept.";
   }
   if (status === "circle_review") {
-    return "Automated checks were not decisive. The accountability circle can review the capture.";
+    return hasCircle
+      ? "Fresh proof is waiting for eligible accountability-circle members to review the prompt response and workout environment."
+      : "Fresh proof is waiting for an authorized CalledOut reviewer to confirm the prompt response and workout environment.";
   }
   if (status === "rejected" || status === "more_proof_required") {
     return "This capture did not pass enough checks. Fresh proof can be retaken before the deadline.";
@@ -61,6 +63,7 @@ export default function CommitmentDetailScreen() {
   }
 
   const item = query.data;
+  const hasCircle = Boolean(item.circle);
 
   return (
     <Screen>
@@ -97,13 +100,15 @@ export default function CommitmentDetailScreen() {
           </Text>
           <Text variant="section">
             {item.proof.status === "circle_review"
-              ? "Circle review"
+              ? hasCircle
+                ? "Circle review"
+                : "CalledOut review"
               : item.proof.status === "rejected"
                 ? "More proof needed"
                 : item.proof.status.replaceAll("_", " ")}
           </Text>
           <Text style={{ color: colors.textSecondary }}>
-            {proofResultCopy(item.proof.status)}
+            {proofResultCopy(item.proof.status, hasCircle)}
           </Text>
           <Text variant="caption" style={{ color: colors.textSecondary }}>
             Captured {dateLabel(item.proof.captured_at)} at{" "}
