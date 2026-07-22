@@ -14,6 +14,26 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const SAFE_NOTIFICATION_ROUTES = [
+  "/commitment/",
+  "/circle/review/",
+  "/circle/",
+  "/wall",
+  "/profile/subscription",
+] as const;
+
+export function notificationRoute(
+  response: Notifications.NotificationResponse | null | undefined,
+) {
+  const value = response?.notification.request.content.data?.route;
+  if (typeof value !== "string") return null;
+  if (!value.startsWith("/")) return null;
+  if (!SAFE_NOTIFICATION_ROUTES.some((prefix) => value.startsWith(prefix))) {
+    return null;
+  }
+  return value;
+}
+
 export async function registerPushToken(userId: string) {
   if (!Device.isDevice) return null;
 
@@ -33,8 +53,7 @@ export async function registerPushToken(userId: string) {
   }
 
   const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ??
-    Constants.easConfig?.projectId;
+    Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
   const token = (
     await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined,
