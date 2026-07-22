@@ -34,9 +34,13 @@ Deno.serve(async (req) => {
       return json({ error: userError?.message ?? "Unauthorized" }, 401);
     }
 
+    const body = await req.json().catch(() => ({}));
+    const continueWithoutAppleRevocation =
+      body?.continueWithoutAppleRevocation === true;
     const hasAppleIdentity = Boolean(
       user.identities?.some((identity) => identity.provider === "apple"),
     );
+    let hasAppleRevocationToken = false;
 
     if (hasAppleIdentity) {
       const revocation = await admin
@@ -46,11 +50,13 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (revocation.error) throw revocation.error;
-      if (!revocation.data) {
+      hasAppleRevocationToken = Boolean(revocation.data);
+
+      if (!hasAppleRevocationToken && !continueWithoutAppleRevocation) {
         return json({
           requiresAppleReauth: true,
           message:
-            "Confirm the Apple account linked to CalledOut before requesting deletion.",
+            "Confirm the Apple account linked to CalledOut so its authorization can also be revoked. You may still continue account deletion if Apple confirmation is unavailable.",
         });
       }
     }
@@ -93,11 +99,21 @@ Deno.serve(async (req) => {
       action: "account_deletion_requested",
       entity_type: "profile",
       entity_id: user.id,
-      after_state: { scheduled_for: scheduledFor, apple: hasAppleIdentity },
+      after_state: {
+        scheduled_for: scheduledFor,
+        apple_identity: hasAppleIdentity,
+        apple_revocation_token_available: hasAppleRevocationToken,
+        continued_without_apple_revocation:
+          hasAppleIdentity && !hasAppleRevocationToken,
+      },
     });
     if (audit.error) console.error("Deletion audit failed", audit.error);
 
-    return json({ scheduledFor, requiresAppleReauth: false });
+    return json({
+      scheduledFor,
+      requiresAppleReauth: false,
+      appleRevocationPrepared: hasAppleRevocationToken,
+    });
   } catch (error) {
     console.error("request-account-deletion failed", error);
     return json(
