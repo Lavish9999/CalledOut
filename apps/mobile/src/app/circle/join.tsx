@@ -9,7 +9,11 @@ import { analytics } from "../../lib/analytics";
 import { colors } from "../../theme/tokens";
 
 function normalizeCode(value: string) {
-  return value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
+  return value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 16);
+}
+
+function validCode(value: string) {
+  return value.length === 8 || value.length === 16;
 }
 
 export default function Join() {
@@ -39,7 +43,7 @@ function JoinForm({ initialCode }: { initialCode: string }) {
       <Header
         eyebrow="INVITE ONLY"
         title="Join a circle"
-        subtitle="Enter the private eight-character code shared by a circle owner or moderator."
+        subtitle="Enter the private code shared by a circle owner or moderator. New invite codes use 16 characters."
         backLabel="Circles"
         onBack={router.back}
       />
@@ -47,21 +51,22 @@ function JoinForm({ initialCode }: { initialCode: string }) {
       <Card style={{ backgroundColor: colors.surfaceMuted }}>
         <Text variant="bodyStrong">Know what becomes visible</Text>
         <Text style={{ color: colors.textSecondary }}>
-          Circle members can see commitments attached to the group, proof outcomes, misses, redemptions, and your circle standing.
+          Circle members can see commitments attached to the group, proof outcomes,
+          misses, redemptions, and your circle standing.
         </Text>
       </Card>
 
       <Field
         label="Invite code"
-        placeholder="AB12CD34"
+        placeholder="AB12CD34EF56GH78"
         value={code}
         onChangeText={(value) => setCode(normalizeCode(value))}
         autoCapitalize="characters"
         autoCorrect={false}
-        maxLength={8}
+        maxLength={16}
         error={
-          code.length > 0 && code.length !== 8
-            ? "Enter all 8 characters."
+          code.length > 0 && !validCode(code)
+            ? "Enter the complete invite code."
             : undefined
         }
       />
@@ -73,7 +78,7 @@ function JoinForm({ initialCode }: { initialCode: string }) {
       <Button
         title="Join circle"
         loading={mutation.isPending}
-        disabled={code.length !== 8}
+        disabled={!validCode(code)}
         onPress={() => mutation.mutate()}
       />
     </Screen>
