@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import * as Updates from "expo-updates";
 
 import {
   Button,
@@ -233,9 +232,13 @@ export default function Wall() {
   });
   const [preview, setPreview] = useState(false);
   const [mode, setMode] = useState<WallViewMode>("wall");
-  const previewAvailable = __DEV__ || Updates.channel === "preview";
+  const previewAvailable = __DEV__;
 
   useEffect(() => analytics.capture("wall_viewed"), []);
+  useEffect(() => {
+    if (!previewAvailable && preview) setPreview(false);
+  }, [preview, previewAvailable]);
+
   const refetchWall = query.refetch;
 
   useFocusEffect(
