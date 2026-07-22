@@ -1,10 +1,48 @@
 import { supabase } from "../../lib/supabase";
 import { getCircles } from "./api";
+import type { CircleRole } from "../../types/domain";
 
 const RESOLVED_STATUSES = ["verified", "redeemed", "missed", "rejected"];
 
 export async function getCircleOverview() {
-  const circles = await getCircles();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: memberships, error: membershipsError } = await supabase
+    .from("circle_members")
+    .select("circle_id,role")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .is("deleted_at", null);
+
+  if (membershipsError) throw membershipsError;
+  if (!memberships?.length) return [];
+
+  const roleByCircle = new Map<string, CircleRole>(
+    memberships.map((membership) => [
+      membership.circle_id,
+      membership.role as CircleRole,
+    ]),
+  );
+
+  const visibleCircles = await getCircles();
+  const circles = Array.from(
+    new Map(
+      visibleCircles
+        .filter((circle) => roleByCircle.has(circle.id))
+        .map((circle) => [
+          circle.id,
+          {
+            ...circle,
+            role: roleByCircle.get(circle.id) ?? circle.role,
+          },
+        ]),
+    ).values(),
+  );
+
   if (!circles.length) return [];
 
   const circleIds = circles.map((circle) => circle.id);
