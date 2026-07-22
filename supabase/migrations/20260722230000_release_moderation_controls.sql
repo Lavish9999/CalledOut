@@ -38,5 +38,7 @@ begin
 end;
 $$;
 
+revoke all on function public.get_blocked_users() from public;
+revoke all on function public.unblock_user(uuid) from public;
 grant execute on function public.get_blocked_users() to authenticated;
 grant execute on function public.unblock_user(uuid) to authenticated;
