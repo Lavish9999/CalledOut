@@ -65,24 +65,14 @@ async function recordFailure(
   const update = await admin
     .from("account_deletion_requests")
     .update({
-      attempts: 1,
       last_attempt_at: new Date().toISOString(),
       last_error: message,
     })
-    .eq("id", requestId)
-    .select("attempts")
-    .maybeSingle();
+    .eq("id", requestId);
 
   if (update.error) {
     console.error("Could not record deletion failure", update.error);
-    return;
   }
-
-  const attempts = Number(update.data?.attempts ?? 1);
-  await admin
-    .from("account_deletion_requests")
-    .update({ attempts })
-    .eq("id", requestId);
 }
 
 Deno.serve(async (req) => {
