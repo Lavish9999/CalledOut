@@ -27,4 +27,5 @@ export const qk = {
   circles: ["circles"] as const,
   circle: (circleId: string) => ["circle", circleId] as const,
   activity: (circleId?: string) => ["activity", circleId] as const,
+  blocked: ["safety", "blocked"] as const,
 };
