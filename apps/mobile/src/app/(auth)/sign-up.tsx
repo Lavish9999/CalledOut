@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { Platform } from "react-native";
-import * as AppleAuthentication from "expo-apple-authentication";
-import * as WebBrowser from "expo-web-browser";
-import { makeRedirectUri } from "expo-auth-session";
 import { Button, Field, Header, Screen, Text } from "../../components/ui";
 import { LegalLinks } from "../../components/legal-links";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { messageFor } from "../../lib/errors";
 import { analytics } from "../../lib/analytics";
+import {
+  signInWithApple,
+  signInWithGoogle,
+} from "../../features/auth/social";
 import { colors } from "../../theme/tokens";
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUp() {
   const [email, setEmail] = useState("");
@@ -19,69 +18,48 @@ export default function SignUp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<"apple" | "google" | null>(
+    null,
+  );
 
   async function emailSignUp() {
     setLoading(true);
     setError("");
     setNotice("");
-    const { error: e } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { emailRedirectTo: "calledout://auth/callback" },
-    });
-    if (e) setError(messageFor(e));
-    else {
+    try {
+      const { error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: "calledout://auth/callback" },
+      });
+      if (authError) throw authError;
       analytics.capture("account_created", { method: "email" });
       setNotice(
         "Check your email to confirm the account, then return to CalledOut.",
       );
-    }
-    setLoading(false);
-  }
-
-  async function oauth(provider: "google") {
-    const redirectTo = makeRedirectUri({
-      scheme: "calledout",
-      path: "auth/callback",
-    });
-    const { data, error: e } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo, skipBrowserRedirect: true },
-    });
-    if (e || !data.url) {
-      setError(messageFor(e));
-      return;
-    }
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-    if (result.type === "success") {
-      const url = new URL(result.url);
-      const code = url.searchParams.get("code");
-      if (code) {
-        const exchange = await supabase.auth.exchangeCodeForSession(code);
-        if (exchange.error) setError(messageFor(exchange.error));
-      }
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function apple() {
+  async function social(provider: "apple" | "google") {
+    setSocialLoading(provider);
+    setError("");
+    setNotice("");
     try {
-      const c = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      if (!c.identityToken)
-        throw new Error("Apple did not return an identity token");
-      const { error: e } = await supabase.auth.signInWithIdToken({
-        provider: "apple",
-        token: c.identityToken,
-        nonce: c.authorizationCode ?? undefined,
-      });
-      if (e) throw e;
-      analytics.capture("account_created", { method: "apple" });
-    } catch (e) {
-      setError(messageFor(e));
+      const result =
+        provider === "apple"
+          ? await signInWithApple()
+          : await signInWithGoogle();
+      if (!result.cancelled) {
+        analytics.capture("account_created", { method: provider });
+      }
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setSocialLoading(null);
     }
   }
 
@@ -94,12 +72,19 @@ export default function SignUp() {
         onBack={router.back}
       />
       {Platform.OS === "ios" ? (
-        <Button title="Continue with Apple" onPress={apple} />
+        <Button
+          title="Continue with Apple"
+          loading={socialLoading === "apple"}
+          disabled={Boolean(socialLoading)}
+          onPress={() => social("apple")}
+        />
       ) : null}
       <Button
         title="Continue with Google"
         variant="secondary"
-        onPress={() => oauth("google")}
+        loading={socialLoading === "google"}
+        disabled={Boolean(socialLoading)}
+        onPress={() => social("google")}
       />
       <Text
         variant="label"
@@ -112,6 +97,7 @@ export default function SignUp() {
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
+        autoCorrect={false}
         keyboardType="email-address"
       />
       <Field
@@ -130,9 +116,17 @@ export default function SignUp() {
       <Button
         title="Create account"
         loading={loading}
-        disabled={password.length < 10 || !email.includes("@")}
+        disabled={
+          Boolean(socialLoading) || password.length < 10 || !email.includes("@")
+        }
         onPress={emailSignUp}
       />
+      <Text
+        style={{ textAlign: "center", color: colors.textSecondary }}
+        onPress={() => router.push("/(auth)/sign-in")}
+      >
+        Already have an account? Sign in.
+      </Text>
       <LegalLinks intro="By continuing, you agree to CalledOut's policies:" />
     </Screen>
   );
