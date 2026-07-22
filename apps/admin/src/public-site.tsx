@@ -12,6 +12,8 @@ type Page = {
   sections: Section[];
 };
 
+export const SUPPORT_EMAIL = 'robbieyisa2@icloud.com';
+
 const pages: Record<PublicPageKey, Page> = {
   privacy: {
     eyebrow: 'PRIVACY',
@@ -22,13 +24,13 @@ const pages: Record<PublicPageKey, Page> = {
         title: 'Information you provide',
         paragraphs: [
           'CalledOut stores account information, your profile, commitments, circle membership, reactions, reports, support requests, and the proof you choose to submit.',
-          'Fresh proof includes in-app photos, timestamps, and randomized verification prompts. Camera-roll photos are not accepted as standard proof.',
+          'Fresh proof includes in-app photos, timestamps, and randomized prompts. Camera-roll photos are not accepted as standard proof. Submitted photos may be reviewed by eligible circle members or authorized CalledOut moderators.',
         ],
       },
       {
         title: 'How information is used',
         paragraphs: [
-          'We use information to operate commitments, verify proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.',
+          'We use information to operate commitments, process and review proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.',
           'CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and App Store purchases.',
         ],
       },
@@ -42,7 +44,7 @@ const pages: Record<PublicPageKey, Page> = {
       {
         title: 'Retention and deletion',
         paragraphs: [
-          'You can request account deletion from Settings inside CalledOut. Social visibility is removed and the account enters the deletion process.',
+          'You can request account deletion from Settings inside CalledOut. Social visibility is removed immediately and the account enters a 30-day deletion process. Proof and profile media are removed when deletion is completed.',
           'Limited billing, security, fraud-prevention, audit, or legal records may be retained when required. Deleting CalledOut does not automatically cancel an App Store subscription.',
         ],
       },
@@ -56,8 +58,15 @@ const pages: Record<PublicPageKey, Page> = {
       {
         title: 'Using CalledOut',
         paragraphs: [
-          'You are responsible for your account, the commitments you create, and the content you submit. Do not manipulate verification, impersonate another person, or interfere with the service.',
+          'You are responsible for your account, the commitments you create, and the content you submit. Do not manipulate proof, impersonate another person, or interfere with the service.',
           'CalledOut is an accountability tool, not medical advice, emergency assistance, or a guarantee of fitness results. Choose activities appropriate for your health and circumstances.',
+        ],
+      },
+      {
+        title: 'Proof review',
+        paragraphs: [
+          'Fresh in-app capture and timing checks do not by themselves prove that a workout occurred. Eligible circle members or authorized CalledOut moderators may review the requested prompt and workout environment before a promise is approved.',
+          'Review decisions may be corrected through safety, dispute, and moderation processes. Do not submit people who did not consent to being photographed.',
         ],
       },
       {
@@ -96,6 +105,13 @@ const pages: Record<PublicPageKey, Page> = {
         ],
       },
       {
+        title: 'Review proof fairly',
+        paragraphs: [
+          'Approve or reject proof based only on whether the submitted photo reasonably shows the requested prompt and workout environment within the commitment window.',
+          'Never judge proof based on body shape, weight, disability, athletic ability, clothing, or workout intensity.',
+        ],
+      },
+      {
         title: 'Report and block',
         paragraphs: [
           'Report profiles or content that may violate these guidelines. Reports are private and reviewed by CalledOut.',
@@ -116,6 +132,13 @@ const pages: Record<PublicPageKey, Page> = {
     title: 'CalledOut Support',
     intro: 'Help with accounts, commitments, proof, safety, and CalledOut Pro.',
     sections: [
+      {
+        title: 'Contact CalledOut',
+        paragraphs: [
+          `Email ${SUPPORT_EMAIL} for account access, billing, deletion, safety, or technical support. Include your CalledOut username when available, but never email a password, Apple credential, or verification code.`,
+          'Typical response time is within two business days. Put “Urgent safety concern” in the subject line for a credible threat, doxxing, or non-consensual content. Immediate danger should be reported to local emergency services.',
+        ],
+      },
       {
         title: 'Contact support in the app',
         paragraphs: [
@@ -159,7 +182,10 @@ export function PublicSite({ pageKey }: { pageKey: PublicPageKey }) {
         <p className="eyebrow red">{page.eyebrow}</p>
         <h1>{page.title}</h1>
         <p className="public-intro">{page.intro}</p>
-        <p className="public-updated">Last updated July 21, 2026</p>
+        {pageKey === 'support' ? (
+          <p><a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
+        ) : null}
+        <p className="public-updated">Last updated July 22, 2026</p>
 
         {page.sections.map((section) => (
           <section key={section.title}>
