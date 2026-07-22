@@ -29,7 +29,7 @@ export async function getMemberWall(userId: string, circleId: string) {
   const [profileResult, missesResult] = await Promise.all([
     supabase
       .from("profiles")
-      .select("display_name,username,avatar_path")
+      .select("id,display_name,username,avatar_path")
       .eq("id", userId)
       .single(),
     supabase
