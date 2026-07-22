@@ -29,29 +29,29 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Information you provide",
         paragraphs: [
-          "CalledOut stores account information, your profile, commitments, circle membership, reactions, support requests, and the proof you choose to submit.",
-          "Fresh proof may include photos, short video, timestamps, verification prompts, and optional location signals when a commitment requires them. Exact location is not displayed to friends.",
+          "CalledOut stores account information, your profile, commitments, circle membership, reactions, reports, support requests, and the proof you choose to submit.",
+          "Fresh proof includes in-app photos, timestamps, and randomized verification prompts. Camera-roll photos are not accepted as standard proof.",
         ],
       },
       {
         title: "How information is used",
         paragraphs: [
           "We use this information to operate commitments, verify proof, calculate records and insights, deliver notifications, prevent fraud, enforce safety rules, provide support, and maintain subscriptions.",
-          "CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and purchases.",
+          "CalledOut does not sell personal information. Service providers may process limited information only to operate authentication, storage, notifications, diagnostics, analytics, and App Store purchases.",
         ],
       },
       {
         title: "Visibility and safety",
         paragraphs: [
           "Your proof and activity follow circle membership, public opt-in, and blocking rules. Public profile and public Wall visibility remain off unless you enable them.",
-          "Reports are private. Blocking hides both people from each other's eligible profile, commitment, proof, activity, and Wall surfaces.",
+          "Reports are private. Blocking hides both people from each other's eligible profile, commitment, proof, activity, comment, reaction, and Wall surfaces.",
         ],
       },
       {
         title: "Retention and deletion",
         paragraphs: [
           "You can request account deletion from Settings. Your social visibility is removed and the account enters the deletion process.",
-          "Limited billing, security, fraud-prevention, audit, or legal records may be retained when required to protect users, resolve disputes, or comply with law. Deleting CalledOut does not automatically cancel an App Store or Play Store subscription.",
+          "Limited billing, security, fraud-prevention, audit, or legal records may be retained when required to protect users, resolve disputes, or comply with law. Deleting CalledOut does not automatically cancel an App Store subscription.",
         ],
       },
       {
@@ -85,14 +85,14 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Subscriptions",
         paragraphs: [
-          "CalledOut Pro is optional. Prices, billing periods, trials, and renewal terms are shown before purchase. Payment is handled by your app store account and subscriptions renew unless canceled in the store's subscription settings.",
-          "Canceling stops future renewal but normally keeps Pro active through the paid period. Deleting your CalledOut account does not cancel the store subscription, so manage the subscription first.",
+          "CalledOut Pro is optional. Prices, billing periods, trials, and renewal terms are shown before purchase. Payment is handled by your App Store account and subscriptions renew unless canceled in App Store subscription settings.",
+          "Canceling stops future renewal but normally keeps Pro active through the paid period. Deleting your CalledOut account does not cancel the App Store subscription, so manage the subscription first.",
         ],
       },
       {
         title: "Service changes and responsibility",
         paragraphs: [
-          "Features may change as CalledOut improves. We work to keep the service available and accurate, but network, device, store, and third-party service failures can occur.",
+          "Features may change as CalledOut improves. We work to keep the service available and accurate, but network, device, App Store, and third-party service failures can occur.",
           "To the extent permitted by law, CalledOut is provided without guarantees that every verification, notification, ranking, or insight will be uninterrupted or error-free.",
         ],
       },
@@ -119,7 +119,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
       {
         title: "Submit safe, authentic content",
         paragraphs: [
-          "Proof must be your own and must not contain sexual content, graphic injury, illegal activity, private information, or people who did not consent to being recorded.",
+          "Proof must be your own and must not contain sexual content, graphic injury, illegal activity, private information, or people who did not consent to being photographed.",
           "Do not fake proof, reuse another person's content, manipulate timestamps, impersonate users, spam circles, or coordinate false reports.",
         ],
       },
@@ -127,7 +127,7 @@ const documents: Record<DocumentKey, LegalDocument> = {
         title: "Use report and block",
         paragraphs: [
           "Report profiles or content that may violate these guidelines. Reports are private and reviewed by CalledOut.",
-          "Block someone when you no longer want eligible profile, Wall, commitment, proof, or activity interactions with that person. You can manage blocked accounts in Settings.",
+          "Block someone when you no longer want eligible profile, Wall, commitment, proof, activity, comment, or reaction interactions with that person. You can manage blocked accounts in Settings.",
         ],
       },
       {
