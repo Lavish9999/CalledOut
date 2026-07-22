@@ -24,10 +24,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    const openResponse = (response: Notifications.NotificationResponse | null) => {
+    const openResponse = async (
+      response: Notifications.NotificationResponse | null,
+    ) => {
       if (!active) return;
       const route = notificationRoute(response);
-      if (route) router.push(route as never);
+      if (!route) return;
+
+      router.push(route as never);
+      await Notifications.clearLastNotificationResponseAsync().catch(() => {});
     };
 
     Notifications.getLastNotificationResponseAsync()
@@ -35,7 +40,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       .catch(() => {});
 
     const subscription = Notifications.addNotificationResponseReceivedListener(
-      openResponse,
+      (response) => {
+        void openResponse(response);
+      },
     );
 
     return () => {
