@@ -42,6 +42,10 @@ function friendlyProofError(error: unknown) {
     return "The photo could not be prepared. Retake it and try again.";
   }
 
+  if (message.includes("restricted")) {
+    return "This account cannot submit proof while access is restricted.";
+  }
+
   return "Proof could not be sent right now. Check your connection and try again.";
 }
 
@@ -72,19 +76,19 @@ function ResultScreen({
       ? colors.missed
       : colors.warning;
   const title = verified
-    ? "Proof verified"
+    ? "Proof approved"
     : review
-      ? "Sent for circle review"
+      ? "Sent for review"
       : queued
         ? "Saved for retry"
         : "More proof needed";
   const body = verified
     ? "Promise kept. Today and your record will update immediately."
     : review
-      ? "Automated checks were not decisive. Your accountability circle can review the capture."
+      ? "Fresh proof was received. A person must review the photo before this promise is marked complete."
       : queued
-        ? "The photo is stored on this phone and will retry automatically while the proof window remains open."
-        : "This capture did not pass enough checks. Retake fresh proof before the deadline.";
+        ? "The photo is stored for this account on this phone and will retry automatically while it remains eligible."
+        : "This capture is missing required proof information. Retake fresh proof before the deadline.";
 
   return (
     <Screen scroll={false} contentStyle={styles.resultScreen}>
@@ -262,7 +266,7 @@ export default function Capture() {
             <Text variant="section">{prompt}</Text>
             <Text style={{ color: colors.textSecondary }}>
               Make sure your face, prompt response, and workout environment are
-              visible before submitting.
+              visible for the reviewer.
             </Text>
           </Card>
 
@@ -298,8 +302,8 @@ export default function Capture() {
           <Text variant="label">LIVE PROMPT</Text>
           <Text variant="section">{prompt}</Text>
           <Text style={{ color: colors.textSecondary }}>
-            Keep your face and workout environment visible. You can review the
-            photo before it is sent.
+            Keep your face, prompt response, and workout environment visible. A
+            person may review the photo before the promise is approved.
           </Text>
         </Card>
 
