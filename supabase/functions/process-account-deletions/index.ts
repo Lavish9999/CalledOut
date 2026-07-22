@@ -12,6 +12,11 @@ const json = (body: unknown, status = 200) =>
   });
 
 type StorageClient = ReturnType<typeof createClient>;
+type AppleRevocationResult = {
+  hadAppleIdentity: boolean;
+  revoked: boolean;
+  error: string | null;
+};
 
 async function removeStoragePrefix(
   admin: StorageClient,
@@ -80,44 +85,75 @@ async function recordFailure(
   }
 }
 
-async function revokeAppleIdentity(admin: StorageClient, userId: string) {
-  const userResult = await admin.auth.admin.getUserById(userId);
-  if (userResult.error) throw userResult.error;
+async function recordAppleRevocationFailure(
+  admin: StorageClient,
+  userId: string,
+  message: string,
+) {
+  const audit = await admin.from("audit_logs").insert({
+    actor_id: userId,
+    action: "apple_revocation_unavailable_during_deletion",
+    entity_type: "profile",
+    entity_id: userId,
+    after_state: { error: message.slice(0, 2000) },
+  });
+  if (audit.error) console.error("Apple revocation audit failed", audit.error);
+}
 
-  const hasAppleIdentity = Boolean(
-    userResult.data.user?.identities?.some(
-      (identity) => identity.provider === "apple",
-    ),
-  );
-  if (!hasAppleIdentity) return false;
+async function revokeAppleIdentity(
+  admin: StorageClient,
+  userId: string,
+): Promise<AppleRevocationResult> {
+  try {
+    const userResult = await admin.auth.admin.getUserById(userId);
+    if (userResult.error) throw userResult.error;
 
-  if (!appleRevocationConfigured()) {
-    throw new Error("Sign in with Apple revocation secrets are not configured");
+    const hasAppleIdentity = Boolean(
+      userResult.data.user?.identities?.some(
+        (identity) => identity.provider === "apple",
+      ),
+    );
+    if (!hasAppleIdentity) {
+      return { hadAppleIdentity: false, revoked: false, error: null };
+    }
+
+    if (!appleRevocationConfigured()) {
+      throw new Error("Sign in with Apple revocation secrets are not configured");
+    }
+
+    const tokenResult = await admin
+      .from("apple_revocation_tokens")
+      .select("encrypted_refresh_token")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (tokenResult.error) throw tokenResult.error;
+    if (!tokenResult.data?.encrypted_refresh_token) {
+      throw new Error("Apple account revocation authorization is unavailable");
+    }
+
+    const refreshToken = await decryptAppleRefreshToken(
+      tokenResult.data.encrypted_refresh_token,
+    );
+    await revokeAppleRefreshToken(refreshToken);
+
+    const deletion = await admin
+      .from("apple_revocation_tokens")
+      .delete()
+      .eq("user_id", userId);
+    if (deletion.error) throw deletion.error;
+
+    return { hadAppleIdentity: true, revoked: true, error: null };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Apple revocation failed";
+    console.error("Apple revocation was unavailable; deletion will continue", {
+      userId,
+      error: message,
+    });
+    await recordAppleRevocationFailure(admin, userId, message);
+    return { hadAppleIdentity: true, revoked: false, error: message };
   }
-
-  const tokenResult = await admin
-    .from("apple_revocation_tokens")
-    .select("encrypted_refresh_token")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (tokenResult.error) throw tokenResult.error;
-  if (!tokenResult.data?.encrypted_refresh_token) {
-    throw new Error("Apple account revocation authorization is missing");
-  }
-
-  const refreshToken = await decryptAppleRefreshToken(
-    tokenResult.data.encrypted_refresh_token,
-  );
-  await revokeAppleRefreshToken(refreshToken);
-
-  const deletion = await admin
-    .from("apple_revocation_tokens")
-    .delete()
-    .eq("user_id", userId);
-  if (deletion.error) throw deletion.error;
-
-  return true;
 }
 
 Deno.serve(async (req) => {
@@ -163,7 +199,7 @@ Deno.serve(async (req) => {
         .eq("id", item.id);
       if (attemptUpdate.error) throw attemptUpdate.error;
 
-      const appleRevoked = await revokeAppleIdentity(admin, item.user_id);
+      const appleRevocation = await revokeAppleIdentity(admin, item.user_id);
 
       const preparation = await admin.rpc("prepare_account_deletion", {
         p_user: item.user_id,
@@ -188,7 +224,7 @@ Deno.serve(async (req) => {
 
       console.info("CalledOut account deleted", {
         userId: item.user_id,
-        appleRevoked,
+        appleRevocation,
         proofFiles,
         profileFiles,
         preparation: preparation.data,
