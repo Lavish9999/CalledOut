@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   Button,
@@ -28,8 +29,7 @@ import { useSession } from "../../providers/session";
 import { colors, spacing } from "../../theme/tokens";
 import type { Commitment } from "../../types/domain";
 
-const activeStatuses = new Set([
-  "upcoming",
+const onClockStatuses = new Set([
   "proof_window_open",
   "proof_submitted",
   "under_review",
@@ -64,7 +64,8 @@ export default function Today() {
     const dashboard = dashboardQuery.data;
     if (!dashboard) {
       return {
-        active: [] as Commitment[],
+        onClock: [] as Commitment[],
+        upcoming: [] as Commitment[],
         attention: [] as Commitment[],
         completed: [] as Commitment[],
         journeys: [],
@@ -103,8 +104,11 @@ export default function Today() {
 
     return {
       journeys,
-      active: regular.filter((commitment) =>
-        activeStatuses.has(commitment.status),
+      onClock: regular.filter((commitment) =>
+        onClockStatuses.has(commitment.status),
+      ),
+      upcoming: regular.filter(
+        (commitment) => commitment.status === "upcoming",
       ),
       attention: regular.filter((commitment) =>
         ["missed", "rejected", "redemption_available"].includes(
@@ -126,27 +130,60 @@ export default function Today() {
   const completedCount = content.completed.length + completedJourneys.length;
   const firstName = profile?.display_name?.split(" ")[0] ?? "today";
   const streak = recordQuery.data?.currentStreak ?? 0;
+  const todayPromiseCount =
+    content.onClock.length +
+    content.upcoming.length +
+    content.attention.length +
+    content.completed.length +
+    content.journeys.length;
+  const promiseLabel =
+    todayPromiseCount === 0
+      ? "No promises today"
+      : `${todayPromiseCount} promise${todayPromiseCount === 1 ? "" : "s"} today`;
+  const streakLabel =
+    streak > 0
+      ? `${streak}-day kept streak`
+      : todayPromiseCount > 0
+        ? "Start your streak today"
+        : "Make the next promise count";
+  const hasTodayItems = Boolean(dashboardQuery.data?.commitments.length);
+  const hasPrimaryContent = Boolean(
+    content.onClock.length ||
+    content.upcoming.length ||
+    activeJourneys.length ||
+    content.attention.length,
+  );
 
   return (
     <Screen>
       <Header
         eyebrow={dateHeading().toUpperCase()}
         title={`Show up, ${firstName}.`}
-        subtitle={`${streak}-commitment streak`}
+        subtitle={`${promiseLabel} · ${streakLabel}`}
         action={
-          <IconButton
-            icon="add"
-            label="Create commitment"
-            onPress={() => router.push("/commitment/new")}
-          />
+          hasTodayItems ? (
+            <IconButton
+              icon="add"
+              label="Create commitment"
+              onPress={() => router.push("/commitment/new")}
+            />
+          ) : undefined
         }
       />
 
       {dashboardQuery.isLoading ? (
         <Loading />
+      ) : dashboardQuery.error ? (
+        <EmptyState
+          title="Could not load Today"
+          body={dashboardQuery.error.message}
+          action={
+            <Button title="Try again" onPress={() => refetchDashboard()} />
+          }
+        />
       ) : (
         <>
-          {(content.active.length || activeJourneys.length) > 0 ? (
+          {(content.onClock.length || activeJourneys.length) > 0 ? (
             <View style={{ gap: spacing.md }}>
               <SectionHeader title="On the clock" />
               {activeJourneys.map((journey) => (
@@ -157,7 +194,16 @@ export default function Today() {
                   redemptionCommitment={journey.redemptionCommitment}
                 />
               ))}
-              {content.active.map((commitment) => (
+              {content.onClock.map((commitment) => (
+                <CommitmentCard key={commitment.id} item={commitment} />
+              ))}
+            </View>
+          ) : null}
+
+          {content.upcoming.length ? (
+            <View style={{ gap: spacing.md }}>
+              <SectionHeader title="Later today" />
+              {content.upcoming.map((commitment) => (
                 <CommitmentCard key={commitment.id} item={commitment} />
               ))}
             </View>
@@ -172,12 +218,10 @@ export default function Today() {
             </View>
           ) : null}
 
-          {!content.active.length &&
-          !activeJourneys.length &&
-          !content.attention.length ? (
+          {!hasPrimaryContent ? (
             <EmptyState
               title="Nothing on the clock"
-              body="Your next commitment will appear here when its proof window opens."
+              body="Make a promise. When proof opens, show up—or the miss becomes part of your record."
               action={
                 <Button
                   title="Create commitment"
@@ -206,34 +250,82 @@ export default function Today() {
                   {content.completed.map((commitment, index) => (
                     <View key={commitment.id}>
                       {index ? <Divider /> : null}
-                      <CompletedCommitmentRow item={commitment} />
+                      <CompletedCommitmentRow
+                        item={commitment}
+                        onPress={() =>
+                          router.push(`/commitment/${commitment.id}` as never)
+                        }
+                      />
                     </View>
                   ))}
                   {completedJourneys.map((journey, index) => (
                     <View key={journey.redemption.id}>
                       {content.completed.length || index ? <Divider /> : null}
-                      <View
-                        style={{
-                          paddingVertical: spacing.sm,
-                          gap: spacing.xxs,
-                        }}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`View ${journey.source!.title} redemption details`}
+                        onPress={() =>
+                          router.push(
+                            `/commitment/${journey.source!.id}` as never,
+                          )
+                        }
+                        style={({ pressed }) => ({
+                          opacity: pressed ? 0.7 : 1,
+                        })}
                       >
-                        <Text variant="bodyStrong">
-                          {journey.source!.title}
-                        </Text>
-                        <Text
-                          variant="caption"
-                          style={{ color: colors.textSecondary }}
+                        <View
+                          style={{
+                            paddingVertical: spacing.sm,
+                            gap: spacing.xxs,
+                          }}
                         >
-                          Miss redeemed. Original consequence remains recorded.
-                        </Text>
-                      </View>
+                          <Text variant="bodyStrong">
+                            {journey.source!.title}
+                          </Text>
+                          <Text
+                            variant="caption"
+                            style={{ color: colors.textSecondary }}
+                          >
+                            Miss redeemed. Original consequence remains
+                            recorded.
+                          </Text>
+                        </View>
+                      </Pressable>
                     </View>
                   ))}
                 </Card>
               ) : null}
             </View>
           ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage recurring schedules"
+            onPress={() => router.push("/schedules")}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <Card
+              style={{
+                padding: spacing.md,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+              }}
+            >
+              <Ionicons name="calendar-outline" size={22} color={colors.text} />
+              <View style={{ flex: 1, gap: spacing.xxs }}>
+                <Text variant="bodyStrong">Recurring schedules</Text>
+                <Text variant="caption" style={{ color: colors.textSecondary }}>
+                  View or end the promises that repeat each week.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </Card>
+          </Pressable>
         </>
       )}
     </Screen>

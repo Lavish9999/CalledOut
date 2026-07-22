@@ -69,6 +69,7 @@ export function Text({
   return (
     <RNText
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
       numberOfLines={numberOfLines}
       style={[{ color: colors.text }, typography[variant], style]}
     >
@@ -189,17 +190,26 @@ export function Field({
 
 export function StatusPill({ status }: { status: string }) {
   const key = status.toLowerCase();
-  const backgroundColor = key.includes("verified")
+  const neutral = key.includes("upcoming") || key.includes("excused") || key.includes("waived");
+  const success =
+    key.includes("verified") || key === "redeemed" || key.includes("completed");
+  const danger =
+    key.includes("miss") || key.includes("reject") || key.includes("expired");
+  const warning = key.includes("redeeming") || key.includes("review");
+  const backgroundColor = success
     ? colors.verified
-    : key.includes("miss") || key.includes("reject") || key.includes("expired")
+    : danger
       ? colors.missed
-      : key.includes("redeem") || key.includes("review")
+      : warning
         ? colors.warning
-        : colors.dark;
+        : neutral
+          ? colors.surfaceMuted
+          : colors.dark;
+  const foregroundColor = neutral ? colors.text : colors.surface;
 
   return (
     <View style={[styles.pill, { backgroundColor }]}>
-      <Text variant="label" style={{ color: colors.surface }}>
+      <Text variant="label" style={{ color: foregroundColor }}>
         {status.replaceAll("_", " ").toUpperCase()}
       </Text>
     </View>
@@ -211,14 +221,35 @@ export function Header({
   title,
   subtitle,
   action,
+  backLabel,
+  onBack,
 }: {
   eyebrow?: string;
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  backLabel?: string;
+  onBack?: () => void;
 }) {
   return (
     <View style={{ gap: spacing.xs }}>
+      {onBack ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Back to ${backLabel ?? "previous screen"}`}
+          onPress={onBack}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.backButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+          <Text variant="caption" style={{ color: colors.text }}>
+            {backLabel ?? "Back"}
+          </Text>
+        </Pressable>
+      ) : null}
       {eyebrow ? (
         <Text variant="label" style={{ color: colors.textSecondary }}>
           {eyebrow}
@@ -257,12 +288,16 @@ export function SectionHeader({
 export function Metric({
   value,
   label,
+  compact = false,
 }: {
   value: string | number;
   label: string;
+  compact?: boolean;
 }) {
   return (
-    <Card style={styles.metric}>
+    <Card
+      style={compact ? [styles.metric, styles.metricCompact] : styles.metric}
+    >
       <Text variant="title">{value}</Text>
       <Text style={{ color: colors.textSecondary }}>{label}</Text>
     </Card>
@@ -274,11 +309,13 @@ export function SettingsRow({
   body,
   value,
   onValueChange,
+  disabled = false,
 }: {
   title: string;
   body?: string;
   value: boolean;
   onValueChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.settingsRow}>
@@ -290,7 +327,7 @@ export function SettingsRow({
           </Text>
         ) : null}
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
     </View>
   );
 }
@@ -409,6 +446,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
   },
+  backButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    minHeight: 32,
+    marginLeft: -6,
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -423,6 +468,12 @@ const styles = StyleSheet.create({
   metric: {
     flex: 1,
     minWidth: 140,
+  },
+  metricCompact: {
+    minHeight: 112,
+    padding: spacing.md,
+    gap: spacing.xs,
+    justifyContent: "space-between",
   },
   settingsRow: {
     flexDirection: "row",

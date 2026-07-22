@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Alert, Linking } from "react-native";
+import { Alert } from "react-native";
+import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
 
 import {
@@ -31,12 +32,23 @@ export default function Settings() {
   });
 
   function savePrivacy(nextProfile: boolean, nextWall: boolean) {
+    const previousProfile = publicProfile;
+    const previousWall = publicWall;
+
     setPublicProfile(nextProfile);
     setPublicWall(nextWall);
-    privacyMutation.mutate({
-      public_profile_opt_in: nextProfile,
-      public_wall_opt_in: nextWall,
-    });
+    privacyMutation.mutate(
+      {
+        public_profile_opt_in: nextProfile,
+        public_wall_opt_in: nextWall,
+      },
+      {
+        onError: () => {
+          setPublicProfile(previousProfile);
+          setPublicWall(previousWall);
+        },
+      },
+    );
   }
 
   async function deletion() {
@@ -69,6 +81,8 @@ export default function Settings() {
       <Header
         title="Settings & privacy"
         subtitle="CalledOut stays private unless you explicitly opt in."
+        backLabel="Profile"
+        onBack={router.back}
       />
 
       <SectionHeader title="Privacy" />
@@ -77,14 +91,21 @@ export default function Settings() {
           title="Public profile"
           body="Allow people outside your circles to view your basic profile."
           value={publicProfile}
+          disabled={privacyMutation.isPending}
           onValueChange={(next) => savePrivacy(next, publicWall)}
         />
         <SettingsRow
           title="Public Wall visibility"
           body="Allow eligible misses to appear beyond private circles."
           value={publicWall}
+          disabled={privacyMutation.isPending}
           onValueChange={(next) => savePrivacy(publicProfile, next)}
         />
+        {privacyMutation.isPending ? (
+          <Text variant="caption" style={{ color: colors.textSecondary }}>
+            Saving privacy settings…
+          </Text>
+        ) : null}
         {privacyMutation.error ? (
           <Text variant="caption" style={{ color: colors.missed }}>
             {privacyMutation.error.message}
@@ -94,11 +115,9 @@ export default function Settings() {
 
       <SectionHeader title="Account" />
       <Button
-        title="Manage subscription"
+        title="Subscription & plan"
         variant="secondary"
-        onPress={() =>
-          Linking.openURL("https://apps.apple.com/account/subscriptions")
-        }
+        onPress={() => router.push("/profile/subscription" as never)}
       />
       <Button title="Sign out" variant="secondary" onPress={signOut} />
       <Button title="Delete account" variant="danger" onPress={deletion} />

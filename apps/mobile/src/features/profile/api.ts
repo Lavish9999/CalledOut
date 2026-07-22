@@ -1,7 +1,9 @@
 import { supabase } from "../../lib/supabase";
 import type {
+  AccountabilityInsights,
   CommitmentHistoryItem,
-  CommitmentStatus,
+  InsightPattern,
+  InsightWeek,
   ProfileRecord,
   RedemptionStatus,
 } from "../../types/domain";
@@ -84,66 +86,20 @@ async function getOwnCommitmentsAndRedemptions() {
 }
 
 export async function getProfileRecord(): Promise<ProfileRecord> {
-  const { commitments, redemptionByCommitment } =
-    await getOwnCommitmentsAndRedemptions();
+  const { data, error } = await supabase.rpc("get_profile_record");
 
-  const resolvedStatuses = new Set<CommitmentStatus>([
-    "verified",
-    "missed",
-    "redeemed",
-    "rejected",
-  ]);
+  if (error) throw error;
 
-  const originalResolved = commitments.filter(
-    (commitment) =>
-      !redemptionByCommitment.has(commitment.id) &&
-      resolvedStatuses.has(commitment.status as CommitmentStatus),
-  );
-
-  const completed = originalResolved.filter(
-    (commitment) => commitment.status === "verified",
-  ).length;
-
-  const missed = originalResolved.filter((commitment) =>
-    ["missed", "redeemed", "rejected"].includes(commitment.status),
-  ).length;
-
-  const scheduled = originalResolved.length;
-  const completionRate = scheduled ? (completed / scheduled) * 100 : 0;
-
-  const dateResults = new Map<string, boolean[]>();
-
-  for (const commitment of originalResolved) {
-    const values = dateResults.get(commitment.commitment_date) ?? [];
-    values.push(commitment.status === "verified");
-    dateResults.set(commitment.commitment_date, values);
-  }
-
-  const successfulDates = [...dateResults.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, values]) => values.every(Boolean));
-
-  let run = 0;
-  let longestStreak = 0;
-
-  for (const successful of successfulDates) {
-    run = successful ? run + 1 : 0;
-    longestStreak = Math.max(longestStreak, run);
-  }
-
-  const currentStreak = run;
-  const redemptionsCompleted = [...redemptionByCommitment.values()].filter(
-    (status) => status === "completed",
-  ).length;
+  const value = (data ?? {}) as Record<string, unknown>;
 
   return {
-    scheduled,
-    completed,
-    missed,
-    redemptionsCompleted,
-    completionRate,
-    currentStreak,
-    longestStreak,
+    scheduled: Number(value.scheduled ?? 0),
+    completed: Number(value.completed ?? 0),
+    missed: Number(value.missed ?? 0),
+    redemptionsCompleted: Number(value.redemptions_completed ?? 0),
+    completionRate: Number(value.completion_rate ?? 0),
+    currentStreak: Number(value.current_streak ?? 0),
+    longestStreak: Number(value.longest_streak ?? 0),
   };
 }
 
@@ -171,4 +127,82 @@ export async function updatePrivacy(input: {
     .eq("id", user.id);
 
   if (error) throw error;
+}
+
+function parseInsightPattern(value: unknown): InsightPattern | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const row = value as Record<string, unknown>;
+  if (typeof row.name !== "string") return null;
+
+  return {
+    name: row.name,
+    total: Number(row.total ?? 0),
+    completed: Number(row.completed ?? 0),
+    rate: Number(row.rate ?? 0),
+  };
+}
+
+function parseInsightWeeks(value: unknown): InsightWeek[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    if (typeof row.week_start !== "string" || typeof row.label !== "string") {
+      return [];
+    }
+
+    return [
+      {
+        weekStart: row.week_start,
+        label: row.label,
+        total: Number(row.total ?? 0),
+        completed: Number(row.completed ?? 0),
+        missed: Number(row.missed ?? 0),
+        rate: Number(row.rate ?? 0),
+      },
+    ];
+  });
+}
+
+function nullableNumber(value: unknown) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export async function getAccountabilityInsights(): Promise<AccountabilityInsights> {
+  const { data, error } = await supabase.rpc("get_accountability_insights");
+
+  if (error) throw error;
+
+  const value = (data ?? {}) as Record<string, unknown>;
+
+  return {
+    resolvedCount: Number(value.resolved_count ?? 0),
+    completedCount: Number(value.completed_count ?? 0),
+    missedCount: Number(value.missed_count ?? 0),
+    completionRate: Number(value.completion_rate ?? 0),
+    last30Total: Number(value.last30_total ?? 0),
+    last30Completed: Number(value.last30_completed ?? 0),
+    last30Missed: Number(value.last30_missed ?? 0),
+    last30CompletionRate: Number(value.last30_completion_rate ?? 0),
+    prior30Total: Number(value.prior30_total ?? 0),
+    prior30CompletionRate: nullableNumber(value.prior30_completion_rate),
+    trendDelta: nullableNumber(value.trend_delta),
+    currentStreak: Number(value.current_streak ?? 0),
+    longestStreak: Number(value.longest_streak ?? 0),
+    bestWeekday: parseInsightPattern(value.best_weekday),
+    weakestWeekday: parseInsightPattern(value.weakest_weekday),
+    strongestWorkout: parseInsightPattern(value.strongest_workout),
+    bestDeadlineWindow: parseInsightPattern(value.best_deadline_window),
+    weeklyTrend: parseInsightWeeks(value.weekly_trend),
+    averageProofLeadMinutes: nullableNumber(value.average_proof_lead_minutes),
+    proofSampleCount: Number(value.proof_sample_count ?? 0),
+    redemptionResolvedCount: Number(value.redemption_resolved_count ?? 0),
+    redemptionCompletedCount: Number(value.redemption_completed_count ?? 0),
+    redemptionOpenCount: Number(value.redemption_open_count ?? 0),
+    redemptionRate: nullableNumber(value.redemption_rate),
+  };
 }

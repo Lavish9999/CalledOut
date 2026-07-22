@@ -1,80 +1,181 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { AppState } from "react-native";
+
 import { supabase } from "../lib/supabase";
 import type { Profile } from "../types/domain";
-import { configurePurchases } from "../lib/purchases";
+import { configurePurchases, resetPurchasesUser } from "../lib/purchases";
 import { analytics } from "../lib/analytics";
+import { captureException } from "../lib/observability";
+import { reconcilePlanAccess } from "../features/subscription/api";
+import { queryClient, qk } from "../lib/query";
+
+const PROFILE_LOAD_MESSAGE =
+  "CalledOut could not load your account. Check your connection and try again.";
+
 type Value = {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  error: string | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
-const C = createContext<Value | undefined>(undefined);
+
+const SessionContext = createContext<Value | undefined>(undefined);
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const refreshProfile = async () => {
+  const [error, setError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(async (userId: string) => {
+    const { data, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    setProfile(data as Profile | null);
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
+    setError(null);
     const user = (await supabase.auth.getUser()).data.user;
+
     if (!user) {
       setProfile(null);
       return;
     }
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (error) throw error;
-    setProfile(data as Profile | null);
-  };
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session) {
-        await refreshProfile();
-        analytics.identify(data.session.user.id);
-        await configurePurchases(data.session.user.id);
+
+    try {
+      await loadProfile(user.id);
+    } catch (cause) {
+      captureException(cause, { area: "profile_refresh" });
+      setError(PROFILE_LOAD_MESSAGE);
+      throw cause;
+    }
+  }, [loadProfile]);
+
+  const activateSession = useCallback(
+    async (next: Session | null) => {
+      setSession(next);
+      setProfile(null);
+      setError(null);
+
+      if (!next) return;
+
+      try {
+        await loadProfile(next.user.id);
+      } catch (cause) {
+        captureException(cause, { area: "profile_load" });
+        setError(PROFILE_LOAD_MESSAGE);
+        return;
       }
-      setLoading(false);
-    });
+
+      analytics.identify(next.user.id);
+      await configurePurchases(next.user.id).catch((cause) =>
+        captureException(cause, { area: "revenuecat_login" }),
+      );
+
+      reconcilePlanAccess()
+        .then((plan) => queryClient.setQueryData(qk.plan, plan))
+        .catch((cause) =>
+          captureException(cause, { area: "subscription_reconcile_login" }),
+        );
+    },
+    [loadProfile],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth
+      .getSession()
+      .then(async ({ data, error: sessionError }) => {
+        if (sessionError) throw sessionError;
+        if (mounted) await activateSession(data.session);
+      })
+      .catch((cause) => {
+        captureException(cause, { area: "session_bootstrap" });
+        if (mounted) setError("CalledOut could not restore your session.");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, next) => {
-      setSession(next);
-      if (next) {
-        await refreshProfile();
-        await configurePurchases(next.user.id);
-      } else setProfile(null);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((_event, next) => {
+      activateSession(next)
+        .catch((cause) =>
+          captureException(cause, { area: "auth_state_change" }),
+        )
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
     });
-    return () => subscription.unsubscribe();
-  }, []);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [activateSession]);
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+
+      reconcilePlanAccess()
+        .then((plan) => queryClient.setQueryData(qk.plan, plan))
+        .catch((cause) =>
+          captureException(cause, {
+            area: "subscription_reconcile_foreground",
+          }),
+        );
+    });
+
+    return () => subscription.remove();
+  }, [session?.user.id]);
+
   const value = useMemo(
     () => ({
       session,
       profile,
       loading,
+      error,
       refreshProfile,
       signOut: async () => {
+        await resetPurchasesUser().catch((cause) =>
+          captureException(cause, { area: "revenuecat_logout" }),
+        );
         await supabase.auth.signOut();
+        setProfile(null);
+        setError(null);
         analytics.reset();
       },
     }),
-    [session, profile, loading],
+    [session, profile, loading, error, refreshProfile],
   );
-  return <C.Provider value={value}>{children}</C.Provider>;
+
+  return (
+    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+  );
 }
+
 export function useSession() {
-  const v = useContext(C);
-  if (!v) throw new Error("SessionProvider missing");
-  return v;
+  const value = useContext(SessionContext);
+  if (!value) throw new Error("SessionProvider missing");
+  return value;
 }

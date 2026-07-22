@@ -2,7 +2,6 @@ import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import {
-  Button,
   Card,
   EmptyState,
   Header,
@@ -39,10 +38,14 @@ export default function HistoryScreen() {
       <Header
         title="Workout history"
         subtitle="Your full record. Redemptions never erase misses."
+        backLabel="Profile"
+        onBack={router.back}
       />
 
       {query.isLoading ? (
         <Loading />
+      ) : query.error ? (
+        <EmptyState title="Could not load history" body={query.error.message} />
       ) : history.length ? (
         history.map((item) => (
           <Card key={item.id}>
@@ -61,8 +64,6 @@ export default function HistoryScreen() {
           body="Completed and missed commitments will appear here."
         />
       )}
-
-      <Button title="Done" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

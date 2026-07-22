@@ -3,18 +3,29 @@ import * as Crypto from "expo-crypto";
 
 import { supabase } from "../../lib/supabase";
 
+export type ProofVerificationResult = {
+  status: "verified" | "circle_review" | "more_proof_required";
+  score?: number | null;
+  explanation?: string;
+};
+
 export type ProofInput = {
   commitmentId: string;
   uri: string;
   prompt: string;
   promptCompleted: boolean;
   locationResult:
-    "within_approved_location" | "outside_approved_location" | "unavailable";
+    | "within_approved_location"
+    | "outside_approved_location"
+    | "unavailable"
+    | "not_required";
   capturedAt: string;
   submissionId?: string;
 };
 
-export async function submitProof(input: ProofInput) {
+export async function submitProof(
+  input: ProofInput,
+): Promise<ProofVerificationResult> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -45,10 +56,17 @@ export async function submitProof(input: ProofInput) {
         throw result.error;
       }
 
-      return result.data;
+      return result.data as ProofVerificationResult;
     }
 
-    return existing.data;
+    const existingStatus =
+      existing.data.status === "rejected"
+        ? "more_proof_required"
+        : existing.data.status;
+
+    return {
+      status: existingStatus as ProofVerificationResult["status"],
+    };
   }
 
   const base64 = await FileSystem.readAsStringAsync(input.uri, {
@@ -73,6 +91,8 @@ export async function submitProof(input: ProofInput) {
       upsert: false,
     });
 
+  const uploadedNewFile = !upload.error;
+
   if (upload.error) {
     const message = upload.error.message.toLowerCase();
 
@@ -96,6 +116,9 @@ export async function submitProof(input: ProofInput) {
   });
 
   if (creation.error) {
+    if (uploadedNewFile) {
+      await supabase.storage.from("proof-media").remove([storagePath]);
+    }
     throw creation.error;
   }
 
@@ -110,5 +133,5 @@ export async function submitProof(input: ProofInput) {
     throw result.error;
   }
 
-  return result.data;
+  return result.data as ProofVerificationResult;
 }

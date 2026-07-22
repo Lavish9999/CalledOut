@@ -22,6 +22,10 @@ export type AnalyticsEvent =
   | "reaction_sent"
   | "report_submitted"
   | "paywall_viewed"
+  | "subscription_purchase_started"
+  | "subscription_purchase_cancelled"
+  | "subscription_purchase_failed"
+  | "subscription_restore_started"
   | "trial_started"
   | "subscription_started"
   | "subscription_cancelled";

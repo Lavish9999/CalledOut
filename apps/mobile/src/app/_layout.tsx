@@ -4,15 +4,15 @@ import { StatusBar } from "expo-status-bar";
 
 import { AppProviders } from "../providers/app-providers";
 import { useSession } from "../providers/session";
-import { Loading } from "../components/ui";
+import { Button, EmptyState, Loading, Screen } from "../components/ui";
 
 function Guard() {
-  const { session, profile, loading } = useSession();
+  const { session, profile, loading, error, refreshProfile, signOut } = useSession();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || error) return;
 
     const group = segments[0];
 
@@ -31,9 +31,22 @@ function Guard() {
     ) {
       router.replace("/(tabs)");
     }
-  }, [session, profile, loading, segments, router]);
+  }, [session, profile, loading, error, segments, router]);
 
   if (loading) return <Loading />;
+
+  if (error) {
+    return (
+      <Screen>
+        <EmptyState
+          title="Could not load your account"
+          body={error}
+          action={<Button title="Try again" onPress={() => refreshProfile()} />}
+        />
+        <Button title="Sign out" variant="secondary" onPress={signOut} />
+      </Screen>
+    );
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: "fade" }}>
@@ -43,6 +56,7 @@ function Guard() {
       <Stack.Screen name="auth/callback" />
       <Stack.Screen name="auth/reset" />
       <Stack.Screen name="commitment/new" options={{ presentation: "modal" }} />
+      <Stack.Screen name="commitment/[id]" options={{ presentation: "card" }} />
       <Stack.Screen
         name="proof/capture"
         options={{ presentation: "fullScreenModal" }}

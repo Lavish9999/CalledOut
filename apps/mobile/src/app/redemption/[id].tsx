@@ -1,13 +1,16 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
+
 import { Button, Card, Header, Screen, Text } from "../../components/ui";
 import { supabase } from "../../lib/supabase";
 import { queryClient, qk } from "../../lib/query";
 import { analytics } from "../../lib/analytics";
+
 export default function Redemption() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const m = useMutation({
+  const mutation = useMutation({
     mutationFn: async () => {
+      if (!id) throw new Error("Commitment is missing.");
       const { error } = await supabase.rpc("start_redemption", {
         p_commitment_id: id,
       });
@@ -19,11 +22,14 @@ export default function Redemption() {
       router.back();
     },
   });
+
   return (
     <Screen>
       <Header
         title="Redemption"
         subtitle="The miss remains in history. The status can still change."
+        backLabel="Today"
+        onBack={router.back}
       />
       <Card>
         <Text variant="section">
@@ -34,12 +40,13 @@ export default function Redemption() {
           normal fresh-proof flow.
         </Text>
       </Card>
+      {mutation.error ? <Text>{mutation.error.message}</Text> : null}
       <Button
         title="Start redemption"
-        loading={m.isPending}
-        onPress={() => m.mutate()}
+        loading={mutation.isPending}
+        disabled={!id}
+        onPress={() => mutation.mutate()}
       />
-      <Button title="Not now" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

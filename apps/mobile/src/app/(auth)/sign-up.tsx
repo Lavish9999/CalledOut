@@ -4,6 +4,7 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import { makeRedirectUri } from "expo-auth-session";
 import { Button, Field, Header, Screen, Text } from "../../components/ui";
+import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { messageFor } from "../../lib/errors";
 import { analytics } from "../../lib/analytics";
@@ -50,7 +51,10 @@ export default function SignUp() {
     if (result.type === "success") {
       const url = new URL(result.url);
       const code = url.searchParams.get("code");
-      if (code) await supabase.auth.exchangeCodeForSession(code);
+      if (code) {
+        const exchange = await supabase.auth.exchangeCodeForSession(code);
+        if (exchange.error) setError(messageFor(exchange.error));
+      }
     }
   }
   async function apple() {
@@ -79,6 +83,8 @@ export default function SignUp() {
       <Header
         title="Create your account"
         subtitle="Use a display name. Legal names are not required."
+        backLabel="Welcome"
+        onBack={router.back}
       />
       {Platform.OS === "ios" ? (
         <Button title="Continue with Apple" onPress={apple} />

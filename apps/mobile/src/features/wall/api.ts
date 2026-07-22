@@ -60,7 +60,11 @@ export async function getMemberWall(userId: string, circleId: string) {
 }
 
 export async function reactToMiss(missedId: string, reaction: string) {
+  const user = (await supabase.auth.getUser()).data.user;
+  if (!user) throw new Error("Not authenticated");
+
   const { error } = await supabase.from("reactions").insert({
+    user_id: user.id,
     missed_commitment_id: missedId,
     reaction_type: reaction,
   });

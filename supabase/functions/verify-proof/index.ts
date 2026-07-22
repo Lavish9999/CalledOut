@@ -15,7 +15,6 @@ Deno.serve(async (req) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, "");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -24,10 +23,7 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
+      auth: { persistSession: false, autoRefreshToken: false },
     });
 
     const {
@@ -37,10 +33,7 @@ Deno.serve(async (req) => {
 
     if (userError || !user) {
       console.error("Proof auth failed", userError);
-      return json(
-        { error: userError?.message ?? "Unauthorized" },
-        401,
-      );
+      return json({ error: userError?.message ?? "Unauthorized" }, 401);
     }
 
     const requestBody = await req.json();
@@ -50,10 +43,7 @@ Deno.serve(async (req) => {
       return json({ error: "submissionId is required" }, 400);
     }
 
-    const {
-      data: proof,
-      error: proofError,
-    } = await admin
+    const { data: proof, error: proofError } = await admin
       .from("proof_submissions")
       .select("*, commitment:commitments(*)")
       .eq("id", submissionId)
@@ -62,14 +52,18 @@ Deno.serve(async (req) => {
 
     if (proofError || !proof) {
       console.error("Proof lookup failed", proofError);
-      return json(
-        { error: proofError?.message ?? "Proof not found" },
-        404,
-      );
+      return json({ error: proofError?.message ?? "Proof not found" }, 404);
+    }
+
+    if (proof.status === "verified") {
+      return json({
+        status: proof.status,
+        score: proof.verification_score,
+        explanation: "This proof was already verified.",
+      });
     }
 
     const commitment = proof.commitment;
-
     if (!commitment) {
       return json({ error: "Commitment data was not found" }, 404);
     }
@@ -79,27 +73,19 @@ Deno.serve(async (req) => {
     const windowStartsAt = new Date(
       commitment.proof_window_starts_at,
     ).getTime();
-    const deadlineAt = new Date(commitment.deadline_at).getTime();
+    const deadlineAt =
+      new Date(commitment.deadline_at).getTime() +
+      Number(commitment.grace_period_minutes ?? 0) * 60_000;
 
     const signals = {
       freshCapture:
         proof.capture_source === "in_app_camera" &&
         Math.abs(now - capturedAt) < 15 * 60_000,
-
-      liveness: Boolean(
-        proof.liveness_completed &&
-        proof.liveness_prompt,
-      ),
-
-      withinWindow:
-        capturedAt >= windowStartsAt &&
-        capturedAt <= deadlineAt,
-
+      liveness: Boolean(proof.liveness_completed && proof.liveness_prompt),
+      withinWindow: capturedAt >= windowStartsAt && capturedAt <= deadlineAt,
       locationMatch:
         !commitment.requires_location ||
-        proof.location_result ===
-          "within_approved_location",
-
+        proof.location_result === "within_approved_location",
       healthMatch: false,
       integrityClean: true,
     };
@@ -114,69 +100,67 @@ Deno.serve(async (req) => {
     ] as const;
 
     const score = checks.reduce(
-      (total, [, passed, points]) =>
-        total + (passed ? points : 0),
+      (total, [, passed, points]) => total + (passed ? points : 0),
       0,
     );
 
-    const status =
+    const decision =
       score >= 70
         ? "verified"
         : score >= 45
           ? "circle_review"
           : "more_proof_required";
+    const storedProofStatus =
+      decision === "more_proof_required" ? "rejected" : decision;
 
-    const checksInsert = await admin
-      .from("verification_checks")
-      .insert(
-        checks.map(([checkType, passed, points]) => ({
-          proof_submission_id: submissionId,
-          check_type: checkType,
-          passed,
-          points_awarded: passed ? points : 0,
-          details: { automated: true },
-        })),
-      );
+    const checksUpsert = await admin.from("verification_checks").upsert(
+      checks.map(([checkType, passed, points]) => ({
+        proof_submission_id: submissionId,
+        check_type: checkType,
+        passed,
+        points_awarded: passed ? points : 0,
+        details: { automated: true },
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "proof_submission_id,check_type" },
+    );
 
-    if (checksInsert.error) {
+    if (checksUpsert.error) {
       throw new Error(
-        `Verification checks failed: ${checksInsert.error.message}`,
+        `Verification checks failed: ${checksUpsert.error.message}`,
       );
     }
+
+    const decidedAt =
+      decision === "verified" || decision === "more_proof_required"
+        ? new Date().toISOString()
+        : null;
 
     const proofUpdate = await admin
       .from("proof_submissions")
       .update({
-        status,
+        status: storedProofStatus,
         verification_score: score,
-        decided_at:
-          status === "verified"
-            ? new Date().toISOString()
-            : null,
+        decided_at: decidedAt,
       })
       .eq("id", submissionId);
 
     if (proofUpdate.error) {
-      throw new Error(
-        `Proof update failed: ${proofUpdate.error.message}`,
-      );
+      throw new Error(`Proof update failed: ${proofUpdate.error.message}`);
     }
 
     const commitmentStatus =
-      status === "verified"
+      decision === "verified"
         ? "verified"
-        : status === "circle_review"
+        : decision === "circle_review"
           ? "under_review"
-          : "proof_submitted";
+          : "rejected";
 
     const commitmentUpdate = await admin
       .from("commitments")
       .update({
         status: commitmentStatus,
-        verified_at:
-          status === "verified"
-            ? new Date().toISOString()
-            : null,
+        verified_at: decision === "verified" ? decidedAt : null,
       })
       .eq("id", proof.commitment_id);
 
@@ -186,52 +170,71 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (status === "verified") {
-      const activityInsert = await admin
-        .from("activity_events")
-        .insert({
-          actor_id: user.id,
-          circle_id: commitment.circle_id,
-          commitment_id: proof.commitment_id,
-          proof_submission_id: submissionId,
-          event_type: "proof_verified",
-          payload: { title: commitment.title },
-        });
+    if (decision === "verified") {
+      const { data: redemptionCommitment, error: redemptionLookupError } =
+        await admin
+          .from("redemptions")
+          .select("id")
+          .eq("redemption_commitment_id", proof.commitment_id)
+          .is("deleted_at", null)
+          .maybeSingle();
 
-      if (activityInsert.error) {
+      if (redemptionLookupError) {
         throw new Error(
-          `Activity creation failed: ${activityInsert.error.message}`,
+          `Redemption lookup failed: ${redemptionLookupError.message}`,
         );
+      }
+
+      // Redemption completion has its own trigger-generated activity event.
+      // Skipping the generic proof event prevents duplicate timeline entries.
+      if (!redemptionCommitment) {
+        const activityUpsert = await admin.from("activity_events").upsert(
+          {
+            actor_id: user.id,
+            circle_id: commitment.circle_id,
+            commitment_id: proof.commitment_id,
+            proof_submission_id: submissionId,
+            event_type: "proof_verified",
+            payload: { title: commitment.title },
+          },
+          { onConflict: "proof_submission_id,event_type" },
+        );
+
+        if (activityUpsert.error) {
+          throw new Error(
+            `Activity creation failed: ${activityUpsert.error.message}`,
+          );
+        }
       }
     }
 
-    const auditInsert = await admin
-      .from("audit_logs")
-      .insert({
-        actor_id: user.id,
-        action: "proof_verification_decision",
-        entity_type: "proof_submission",
-        entity_id: submissionId,
-        after_state: {
-          status,
-          score,
-          signals,
-        },
-      });
+    const auditInsert = await admin.from("audit_logs").insert({
+      actor_id: user.id,
+      action: "proof_verification_decision",
+      entity_type: "proof_submission",
+      entity_id: submissionId,
+      after_state: {
+        decision,
+        stored_proof_status: storedProofStatus,
+        score,
+        signals,
+      },
+    });
 
     if (auditInsert.error) {
       console.error("Audit log failed", auditInsert.error);
     }
 
     return json({
-      status,
+      status: decision,
       score,
       explanation:
-        "Automated checks are not infallible. Circle review and disputes remain available.",
+        decision === "more_proof_required"
+          ? "This capture did not pass enough automated checks. A fresh retake is allowed before the deadline."
+          : "Automated checks are not infallible. Circle review and disputes remain available.",
     });
   } catch (error) {
     console.error("verify-proof failed", error);
-
     return json(
       {
         error:
