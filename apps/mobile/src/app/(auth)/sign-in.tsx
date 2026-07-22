@@ -1,7 +1,12 @@
 import { useState } from "react";
+import { Platform } from "react-native";
 import { router } from "expo-router";
 
 import { Button, Field, Header, Screen, Text } from "../../components/ui";
+import {
+  signInWithApple,
+  signInWithGoogle,
+} from "../../features/auth/social";
 import { supabase } from "../../lib/supabase";
 import { messageFor } from "../../lib/errors";
 import { spacing, colors } from "../../theme/tokens";
@@ -11,6 +16,9 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<"apple" | "google" | null>(
+    null,
+  );
 
   async function submit() {
     setLoading(true);
@@ -20,11 +28,24 @@ export default function SignIn() {
         email: email.trim(),
         password,
       });
-      if (result.error) setError(messageFor(result.error));
+      if (result.error) throw result.error;
     } catch (cause) {
       setError(messageFor(cause));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function social(provider: "apple" | "google") {
+    setSocialLoading(provider);
+    setError("");
+    try {
+      if (provider === "apple") await signInWithApple();
+      else await signInWithGoogle();
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setSocialLoading(null);
     }
   }
 
@@ -36,6 +57,29 @@ export default function SignIn() {
         backLabel="Welcome"
         onBack={router.back}
       />
+
+      {Platform.OS === "ios" ? (
+        <Button
+          title="Continue with Apple"
+          loading={socialLoading === "apple"}
+          disabled={Boolean(socialLoading)}
+          onPress={() => social("apple")}
+        />
+      ) : null}
+      <Button
+        title="Continue with Google"
+        variant="secondary"
+        loading={socialLoading === "google"}
+        disabled={Boolean(socialLoading)}
+        onPress={() => social("google")}
+      />
+
+      <Text
+        variant="label"
+        style={{ textAlign: "center", color: colors.textSecondary }}
+      >
+        OR EMAIL
+      </Text>
       <Field
         label="Email"
         value={email}
@@ -54,7 +98,7 @@ export default function SignIn() {
       <Button
         title="Sign in"
         loading={loading}
-        disabled={!email.includes("@") || !password}
+        disabled={Boolean(socialLoading) || !email.includes("@") || !password}
         onPress={submit}
       />
       <Button
