@@ -41,6 +41,12 @@
       "expo-secure-store",
       "expo-apple-authentication",
       [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": false
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow CalledOut to capture fresh workout proof."
