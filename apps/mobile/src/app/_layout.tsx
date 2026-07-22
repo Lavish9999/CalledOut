@@ -16,11 +16,18 @@ function Guard() {
 
     const group = String(segments[0] ?? "");
     const isPublicLegalRoute = group === "legal";
+    const isRestrictedRoute = group === "account-restricted";
+    const isRestrictedAccount = Boolean(
+      session && profile && profile.account_status !== "active",
+    );
 
     if (!session && group !== "(auth)" && !isPublicLegalRoute) {
       router.replace("/(auth)");
+    } else if (isRestrictedAccount && !isRestrictedRoute && !isPublicLegalRoute) {
+      router.replace("/account-restricted" as never);
     } else if (
       session &&
+      !isRestrictedAccount &&
       !profile?.onboarding_completed_at &&
       group !== "(onboarding)" &&
       !isPublicLegalRoute
@@ -28,8 +35,9 @@ function Guard() {
       router.replace("/(onboarding)");
     } else if (
       session &&
+      !isRestrictedAccount &&
       profile?.onboarding_completed_at &&
-      (group === "(auth)" || group === "(onboarding)")
+      (group === "(auth)" || group === "(onboarding)" || isRestrictedRoute)
     ) {
       router.replace("/(tabs)");
     }
@@ -55,6 +63,7 @@ function Guard() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(onboarding)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="account-restricted" />
       <Stack.Screen name="auth/callback" />
       <Stack.Screen name="auth/reset" />
       <Stack.Screen name="legal/[document]" options={{ presentation: "card" }} />
