@@ -25,17 +25,19 @@ export async function reportUser(input: {
   reportedUserId: string;
   reason: ReportReason;
   details?: string;
+  proofSubmissionId?: string;
+  commentId?: string;
 }) {
-  const user = await requireUser();
-  const details = input.details?.trim();
-  const { error } = await supabase.from("reports").insert({
-    reporter_id: user.id,
-    reported_user_id: input.reportedUserId,
-    reason: input.reason,
-    details: details || null,
+  const { data, error } = await supabase.rpc("submit_user_report", {
+    p_reported_user_id: input.reportedUserId,
+    p_reason: input.reason,
+    p_details: input.details?.trim() || null,
+    p_proof_submission_id: input.proofSubmissionId ?? null,
+    p_comment_id: input.commentId ?? null,
   });
 
   if (error) throw error;
+  return data as string;
 }
 
 export async function blockUser(blockedUserId: string) {
@@ -70,18 +72,15 @@ export async function unblockUser(blockedUserId: string) {
 }
 
 export async function submitSupportRequest(message: string) {
-  const user = await requireUser();
   const cleaned = message.trim();
   if (cleaned.length < 20) {
     throw new Error("Add a little more detail so support can help.");
   }
 
-  const contact = user.email ? `\n\nAccount email: ${user.email}` : "";
-  const { error } = await supabase.from("reports").insert({
-    reporter_id: user.id,
-    reason: "support_request",
-    details: `${cleaned}${contact}`,
+  const { data, error } = await supabase.rpc("submit_support_request", {
+    p_details: cleaned,
   });
 
   if (error) throw error;
+  return data as string;
 }
