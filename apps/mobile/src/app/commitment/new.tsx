@@ -1,775 +1,147 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
-import { router } from "expo-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Ionicons } from "@expo/vector-icons";
+import { useMemo,useState } from 'react';
+import { Pressable,View } from 'react-native';
+import { router } from 'expo-router';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { Button,Card,Chip,Field,Header,Notice,Screen,Segmented,Text } from '../../components/ui';
+import { createCommitmentPlan } from '../../features/commitments/api';
+import { getCircles } from '../../features/circles/api';
+import { queryClient,qk } from '../../lib/query';
+import { analytics } from '../../lib/analytics';
+import { colors,radius,spacing } from '../../theme/tokens';
+import type { ProofMethod,WorkoutType } from '../../types/domain';
+import { useSession } from '../../providers/session';
 
-import {
-  Button,
-  Card,
-  Divider,
-  Field,
-  Header,
-  Loading,
-  Screen,
-  SectionHeader,
-  Text,
-} from "../../components/ui";
-import {
-  createOneTimeCommitment,
-  createRecurringCommitment,
-} from "../../features/commitments/api";
-import { getCircles } from "../../features/circles/api";
-import { getPlanOverview } from "../../features/subscription/api";
-import { queryClient, qk } from "../../lib/query";
-import { analytics } from "../../lib/analytics";
-import {
-  dateFromOffset,
-  firstOccurrenceLabel,
-  formatWeekdaySelection,
-  localDateKey,
-  nextWeeklyDeadline,
-  oneTimeDateLabel,
-  todayDeadlinePassed,
-  weekdayOptions,
-} from "../../lib/recurrence";
-import { colors, radius, spacing } from "../../theme/tokens";
-
-const proofWindowChoices = [
-  { minutes: 60, label: "1 hour" },
-  { minutes: 120, label: "2 hours" },
-  { minutes: 240, label: "4 hours" },
-  { minutes: 480, label: "8 hours" },
+const workouts:{value:WorkoutType;label:string}[]=[
+  {value:'gym',label:'Gym'},{value:'running',label:'Run'},{value:'walking',label:'Walk'},
+  {value:'cycling',label:'Cycle'},{value:'sports',label:'Sports'},{value:'home',label:'Home'},
+  {value:'swimming',label:'Swim'},{value:'mobility',label:'Mobility'},{value:'other',label:'Other'},
+];
+const dayLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const consequences=[
+  'Complete a verified 30-minute redemption workout',
+  'Complete an extra workout within 24 hours',
+  'Complete a verified 30-minute walk',
+  'Post an accountability message to the circle',
 ];
 
-const oneTimeOffsets = [0, 1, 2, 3, 4, 5, 6];
+function isoDate(offset=0){const d=new Date();d.setDate(d.getDate()+offset);const year=d.getFullYear();const month=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${year}-${month}-${day}`;}
 
-type RecurrenceMode = "once" | "weekly";
+export default function NewCommitment(){
+  const [step,setStep]=useState(0);
+  const [title,setTitle]=useState('Workout');
+  const [workoutType,setWorkoutType]=useState<WorkoutType>('gym');
+  const [recurrence,setRecurrence]=useState<'one_time'|'weekly'>('weekly');
+  const [days,setDays]=useState([1,3,5]);
+  const [dateOffset,setDateOffset]=useState(0);
+  const [hour,setHour]=useState('8');
+  const [minute,setMinute]=useState('00');
+  const [period,setPeriod]=useState<'AM'|'PM'>('PM');
+  const [duration,setDuration]=useState('30');
+  const [proof,setProof]=useState<'photo'|'photo_location'>('photo');
+  const [circleId,setCircleId]=useState<string|null>(null);
+  const [proofWindow,setProofWindow]=useState('240');
+  const [consequence,setConsequence]=useState(consequences[0]);
+  const [redemptionHours,setRedemptionHours]=useState('24');
+  const [error,setError]=useState('');
+  const {isPro}=useSession();
+  const circles=useQuery({queryKey:qk.circles,queryFn:getCircles});
 
-function timeFromMinutes(totalMinutes: number) {
-  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
-  const hour = Math.floor(normalized / 60);
-  const minute = normalized % 60;
-  const period = hour >= 12 ? "PM" : "AM";
-  const displayHour = hour % 12 || 12;
-  return `${displayHour}:${String(minute).padStart(2, "0")} ${period}`;
-}
+  const deadlineHour=useMemo(()=>{
+    const h=Math.min(12,Math.max(1,Number(hour)||1));
+    return period==='AM'?(h===12?0:h):(h===12?12:h+12);
+  },[hour,period]);
+  const minuteNumber=Math.min(59,Math.max(0,Number(minute)||0));
+  const date=isoDate(dateOffset);
+  const chosenCircle=circles.data?.find(circle=>circle.id===circleId);
+  const proofMethod:ProofMethod=proof==='photo_location'?'combined':'live_photo';
+  const timeLabel=`${Math.min(12,Math.max(1,Number(hour)||1))}:${String(minuteNumber).padStart(2,'0')} ${period}`;
+  const scheduleLabel=recurrence==='weekly'?[...days].sort().map(day=>dayLabels[day]).join(', '):new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
 
-function oneTimeDateTimeLabel(date: Date, baseDate = new Date()) {
-  const start = new Date(baseDate);
-  start.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  target.setHours(0, 0, 0, 0);
-  const offset = Math.round((target.getTime() - start.getTime()) / 86_400_000);
-  const dateLabel = oneTimeDateLabel(offset, baseDate);
-  return `${dateLabel} at ${timeFromMinutes(date.getHours() * 60 + date.getMinutes())}`;
-}
-
-function Stepper({
-  label,
-  value,
-  onDecrease,
-  onIncrease,
-  decreaseDisabled,
-  increaseDisabled,
-}: {
-  label: string;
-  value: string;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  decreaseDisabled?: boolean;
-  increaseDisabled?: boolean;
-}) {
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text variant="caption">{label}</Text>
-      <Card
-        style={{
-          minHeight: 76,
-          padding: spacing.sm,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Decrease ${label.toLowerCase()}`}
-          disabled={decreaseDisabled}
-          onPress={onDecrease}
-          style={({ pressed }) => ({
-            width: 48,
-            height: 48,
-            borderRadius: radius.md,
-            backgroundColor: colors.surfaceMuted,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: decreaseDisabled ? 0.35 : pressed ? 0.7 : 1,
-          })}
-        >
-          <Ionicons name="remove" size={22} color={colors.text} />
-        </Pressable>
-
-        <Text variant="section">{value}</Text>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Increase ${label.toLowerCase()}`}
-          disabled={increaseDisabled}
-          onPress={onIncrease}
-          style={({ pressed }) => ({
-            width: 48,
-            height: 48,
-            borderRadius: radius.md,
-            backgroundColor: colors.surfaceMuted,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: increaseDisabled ? 0.35 : pressed ? 0.7 : 1,
-          })}
-        >
-          <Ionicons name="add" size={22} color={colors.text} />
-        </Pressable>
-      </Card>
-    </View>
-  );
-}
-
-export default function NewCommitment() {
-  const planQuery = useQuery({ queryKey: qk.plan, queryFn: getPlanOverview });
-  const circlesQuery = useQuery({ queryKey: qk.circles, queryFn: getCircles });
-  const circleSelectionInitialized = useRef(false);
-
-  const todayWeekday = new Date().getDay();
-  const [recurrenceMode, setRecurrenceMode] =
-    useState<RecurrenceMode>("weekly");
-  const [now, setNow] = useState(() => new Date());
-  const [selectedDays, setSelectedDays] = useState<number[]>([todayWeekday]);
-  const [oneTimeOffset, setOneTimeOffset] = useState(0);
-  const [title, setTitle] = useState("Workout");
-  const [durationMinutes, setDurationMinutes] = useState(30);
-  const [deadlineHour, setDeadlineHour] = useState(20);
-  const [proofWindowMinutes, setProofWindowMinutes] = useState(240);
-  const [circleId, setCircleId] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (
-      !circleSelectionInitialized.current &&
-      circlesQuery.data &&
-      circlesQuery.data.length > 0
-    ) {
-      circleSelectionInitialized.current = true;
-      setCircleId(circlesQuery.data[0].id);
-    }
-  }, [circlesQuery.data]);
-
-  const atScheduleLimit = Boolean(
-    planQuery.data &&
-    planQuery.data.activeScheduleCount >= planQuery.data.scheduleLimit,
-  );
-
-  const effectiveRecurrenceMode: RecurrenceMode =
-    atScheduleLimit && recurrenceMode === "weekly" ? "once" : recurrenceMode;
-
-  const deadlineTime = timeFromMinutes(deadlineHour * 60);
-  const proofOpenTime = timeFromMinutes(deadlineHour * 60 - proofWindowMinutes);
-  const proofOpensPreviousDay = deadlineHour * 60 - proofWindowMinutes < 0;
-  const selectedCircle = circlesQuery.data?.find(
-    (circle) => circle.id === circleId,
-  );
-  const validTitle = title.trim().length >= 1 && title.trim().length <= 80;
-  const hasSelectedDays = selectedDays.length > 0;
-  const oneTimeDate = dateFromOffset(oneTimeOffset);
-  const oneTimeDeadline = new Date(oneTimeDate);
-  oneTimeDeadline.setHours(deadlineHour, 0, 0, 0);
-  const oneTimeProofOpen = new Date(
-    oneTimeDeadline.getTime() - proofWindowMinutes * 60_000,
-  );
-  const oneTimeDeadlinePassed =
-    effectiveRecurrenceMode === "once" &&
-    oneTimeDeadline.getTime() <= now.getTime();
-  const weeklyLabel = formatWeekdaySelection(selectedDays);
-  const weeklyFirstDeadline = nextWeeklyDeadline(
-    selectedDays,
-    deadlineHour,
-    now,
-  );
-  const weeklySkipsToday =
-    effectiveRecurrenceMode === "weekly" &&
-    todayDeadlinePassed(selectedDays, deadlineHour, now);
-  const firstDeadline =
-    effectiveRecurrenceMode === "weekly"
-      ? weeklyFirstDeadline
-      : oneTimeDeadline;
-  const firstPromiseLabel = firstDeadline
-    ? firstOccurrenceLabel(firstDeadline, now)
-    : "Choose at least one workout day";
-  const recurrenceLabel =
-    effectiveRecurrenceMode === "weekly"
-      ? weeklyLabel
-      : oneTimeDateLabel(oneTimeOffset);
-  const promiseTiming = `${recurrenceLabel} · ${durationMinutes} min · due ${deadlineTime}`;
-  const proofTiming =
-    effectiveRecurrenceMode === "weekly"
-      ? `Live photo opens at ${proofOpenTime}${
-          proofOpensPreviousDay ? " the day before" : ""
-        }`
-      : `Live photo opens ${oneTimeDateTimeLabel(oneTimeProofOpen)}`;
-
-  const consequenceCopy = selectedCircle
-    ? `Miss the deadline and you will appear on ${selectedCircle.name}'s Wall.`
-    : "Miss the deadline and it becomes part of your private record.";
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const shared = {
-        title: title.trim(),
-        workout_type: "gym" as const,
-        deadline_hour: deadlineHour,
-        minimum_duration_minutes: durationMinutes,
-        proof_window_minutes: proofWindowMinutes,
-        proof_method: "live_photo" as const,
-        requires_location: false,
-        circle_id: circleId,
-      };
-
-      if (effectiveRecurrenceMode === "weekly") {
-        return createRecurringCommitment({
-          ...shared,
-          days_of_week: selectedDays,
-        });
-      }
-
-      return createOneTimeCommitment({
-        ...shared,
-        commitment_date: localDateKey(oneTimeDate),
-      });
-    },
-    onSuccess: async () => {
-      analytics.capture("commitment_created", {
-        recurring: effectiveRecurrenceMode === "weekly",
-        selected_days:
-          effectiveRecurrenceMode === "weekly"
-            ? selectedDays.length
-            : undefined,
-        proof_window_minutes: proofWindowMinutes,
-        circle_id: circleId,
-      });
+  const mutation=useMutation({
+    mutationFn:()=>createCommitmentPlan({
+      title:title.trim(),workout_type:workoutType,recurrence,days_of_week:recurrence==='weekly'?days:[],
+      commitment_date:date,deadline_hour:deadlineHour,deadline_minute:minuteNumber,
+      minimum_duration_minutes:Number(duration),proof_method:proofMethod,requires_location:proof==='photo_location',
+      circle_id:circleId,proof_window_minutes:Number(proofWindow),consequence,
+      redemption_window_hours:Number(redemptionHours),
+    }),
+    onSuccess:async()=>{
+      analytics.capture('commitment_created',{recurring:recurrence==='weekly',proof_method:proofMethod,circle:Boolean(circleId)});
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.today }),
-        queryClient.invalidateQueries({ queryKey: qk.plan }),
-        queryClient.invalidateQueries({ queryKey: qk.schedules }),
+        queryClient.invalidateQueries({queryKey:qk.today}),
+        queryClient.invalidateQueries({queryKey:qk.circles}),
       ]);
-
-      Alert.alert(
-        effectiveRecurrenceMode === "weekly"
-          ? "Schedule created"
-          : "Promise created",
-        effectiveRecurrenceMode === "weekly"
-          ? `Your first promise is ${firstPromiseLabel}.`
-          : `Your promise is due ${firstPromiseLabel}.`,
-        [{ text: "Done", onPress: () => router.back() }],
-      );
+      router.back();
     },
-    onError: (cause) =>
-      setError(cause instanceof Error ? cause.message : "Please try again."),
+    onError:(e)=>setError(e instanceof Error?e.message:'Commitment could not be created.'),
   });
 
-  function chooseRecurrence(next: RecurrenceMode) {
-    if (next === "weekly" && atScheduleLimit) {
-      if (planQuery.data?.isPro) {
-        Alert.alert(
-          "Schedule limit reached",
-          "CalledOut Pro supports up to 5 active recurring schedules. End one before creating another.",
-          [
-            { text: "Not now", style: "cancel" },
-            {
-              text: "View schedules",
-              onPress: () => router.push("/schedules"),
-            },
-          ],
-        );
-      } else {
-        router.push("/paywall?source=schedule_limit" as never);
-      }
-      return;
-    }
-
-    setRecurrenceMode(next);
-    setError("");
+  function next(){
+    setError('');
+    if(step===0&&title.trim().length<2)return setError('Give the promise a clear name.');
+    if(step===1&&recurrence==='weekly'&&!days.length)return setError('Choose at least one workout day.');
+    if(step===2&&(Number(hour)<1||Number(hour)>12||minuteNumber>59))return setError('Enter a valid time.');
+    if(step===3&&(Number(duration)<1||Number(proofWindow)<5))return setError('Check the duration and proof window.');
+    if(step<4)setStep(step+1);else mutation.mutate();
   }
 
-  function toggleWeekday(day: number) {
-    setSelectedDays((current) => {
-      if (current.includes(day)) {
-        return current.length === 1
-          ? current
-          : current.filter((value) => value !== day);
-      }
-      return [...current, day].sort((left, right) => left - right);
-    });
-  }
-
-  function confirmCommitment() {
-    Alert.alert(
-      "Lock this in?",
-      `${promiseTiming}\nFirst promise: ${firstPromiseLabel}\n\n${consequenceCopy}\n\nOnce proof opens, this promise cannot be edited.`,
-      [
-        { text: "Not yet", style: "cancel" },
-        {
-          text: "Lock it in",
-          onPress: () => mutation.mutate(),
-        },
-      ],
-    );
-  }
-
-  const formInvalid =
-    !validTitle ||
-    (effectiveRecurrenceMode === "weekly" && !hasSelectedDays) ||
-    oneTimeDeadlinePassed;
-
-  return (
-    <Screen>
-      <Header
-        title="Make the promise"
-        subtitle="Choose one day or a weekly pattern. Once proof opens, the promise is locked."
-        backLabel="Today"
-        onBack={router.back}
-      />
-
-      {planQuery.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <View style={{ gap: spacing.sm }}>
-            <SectionHeader title="Repeats" />
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              {[
-                {
-                  mode: "once" as const,
-                  title: "One time",
-                  body: "Does not use a schedule",
-                },
-                {
-                  mode: "weekly" as const,
-                  title: "Weekly",
-                  body: `${planQuery.data?.activeScheduleCount ?? 0}/${
-                    planQuery.data?.scheduleLimit ?? 1
-                  } schedules used`,
-                },
-              ].map((choice) => {
-                const selected = effectiveRecurrenceMode === choice.mode;
-                const locked = choice.mode === "weekly" && atScheduleLimit;
-                return (
-                  <Pressable
-                    key={choice.mode}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected, disabled: locked }}
-                    onPress={() => chooseRecurrence(choice.mode)}
-                    style={({ pressed }) => ({
-                      flex: 1,
-                      opacity: pressed ? 0.75 : 1,
-                    })}
-                  >
-                    <Card
-                      style={{
-                        minHeight: 104,
-                        padding: spacing.md,
-                        borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? colors.text : colors.border,
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: spacing.xs,
-                        }}
-                      >
-                        <Text variant="bodyStrong">{choice.title}</Text>
-                        <Ionicons
-                          name={
-                            locked
-                              ? "lock-closed"
-                              : selected
-                                ? "radio-button-on"
-                                : "radio-button-off"
-                          }
-                          size={18}
-                          color={locked ? colors.textSecondary : colors.text}
-                        />
-                      </View>
-                      <Text
-                        variant="caption"
-                        style={{ color: colors.textSecondary }}
-                      >
-                        {choice.body}
-                      </Text>
-                    </Card>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {effectiveRecurrenceMode === "weekly" ? (
-              <View style={{ gap: spacing.xs }}>
-                <Text variant="caption">Workout days</Text>
-                <View style={{ flexDirection: "row", gap: spacing.xxs }}>
-                  {weekdayOptions.map((day) => {
-                    const selected = selectedDays.includes(day.value);
-                    return (
-                      <Pressable
-                        key={day.value}
-                        accessibilityRole="checkbox"
-                        accessibilityLabel={day.long}
-                        accessibilityState={{ checked: selected }}
-                        onPress={() => toggleWeekday(day.value)}
-                        style={({ pressed }) => ({
-                          flex: 1,
-                          opacity: pressed ? 0.75 : 1,
-                        })}
-                      >
-                        <View
-                          style={{
-                            minHeight: 52,
-                            borderRadius: radius.md,
-                            borderWidth: selected ? 2 : 1,
-                            borderColor: selected ? colors.text : colors.border,
-                            backgroundColor: colors.surface,
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <Text variant="bodyStrong">{day.narrow}</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Text variant="caption" style={{ color: colors.textSecondary }}>
-                  {weeklyLabel}. Multiple days still count as one recurring
-                  schedule.
-                </Text>
-                <Card
-                  style={{
-                    padding: spacing.sm,
-                    backgroundColor: weeklySkipsToday
-                      ? colors.surfaceMuted
-                      : colors.surface,
-                  }}
-                >
-                  <Text variant="bodyStrong">
-                    First promise: {firstPromiseLabel}
-                  </Text>
-                  {weeklySkipsToday ? (
-                    <Text
-                      variant="caption"
-                      style={{ color: colors.textSecondary }}
-                    >
-                      Today’s {deadlineTime} deadline has already passed, so no
-                      promise will appear on Today until the next selected day.
-                    </Text>
-                  ) : (
-                    <Text
-                      variant="caption"
-                      style={{ color: colors.textSecondary }}
-                    >
-                      This is the first promise that will appear on Today.
-                    </Text>
-                  )}
-                </Card>
-              </View>
-            ) : (
-              <View style={{ gap: spacing.xs }}>
-                <Text variant="caption">Promise date</Text>
-                <View style={{ flexDirection: "row", gap: spacing.xxs }}>
-                  {oneTimeOffsets.map((offset) => {
-                    const date = dateFromOffset(offset);
-                    const selected = oneTimeOffset === offset;
-                    const weekday = new Intl.DateTimeFormat("en-US", {
-                      weekday: "narrow",
-                    }).format(date);
-                    return (
-                      <Pressable
-                        key={offset}
-                        accessibilityRole="radio"
-                        accessibilityLabel={oneTimeDateLabel(offset)}
-                        accessibilityState={{ selected }}
-                        onPress={() => {
-                          setOneTimeOffset(offset);
-                          setError("");
-                        }}
-                        style={({ pressed }) => ({
-                          flex: 1,
-                          opacity: pressed ? 0.75 : 1,
-                        })}
-                      >
-                        <View
-                          style={{
-                            minHeight: 62,
-                            borderRadius: radius.md,
-                            borderWidth: selected ? 2 : 1,
-                            borderColor: selected ? colors.text : colors.border,
-                            backgroundColor: colors.surface,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: spacing.xxs,
-                          }}
-                        >
-                          <Text variant="caption">{weekday}</Text>
-                          <Text variant="bodyStrong">{date.getDate()}</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Text variant="caption" style={{ color: colors.textSecondary }}>
-                  {oneTimeDateLabel(oneTimeOffset)}. This promise will not
-                  repeat.
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Field
-            label="What are you committing to?"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Upper body, 5K run, leg day…"
-            maxLength={80}
-            error={
-              title.length > 0 && !validTitle
-                ? "Use 1–80 characters."
-                : undefined
-            }
-          />
-
-          <View style={{ gap: spacing.lg }}>
-            <Stepper
-              label="Minimum workout time"
-              value={`${durationMinutes} min`}
-              decreaseDisabled={durationMinutes <= 5}
-              increaseDisabled={durationMinutes >= 360}
-              onDecrease={() =>
-                setDurationMinutes((current) => Math.max(5, current - 5))
-              }
-              onIncrease={() =>
-                setDurationMinutes((current) => Math.min(360, current + 5))
-              }
-            />
-
-            <Stepper
-              label="Deadline"
-              value={deadlineTime}
-              decreaseDisabled={deadlineHour <= 0}
-              increaseDisabled={deadlineHour >= 23}
-              onDecrease={() => {
-                setDeadlineHour((current) => Math.max(0, current - 1));
-                setError("");
-              }}
-              onIncrease={() => {
-                setDeadlineHour((current) => Math.min(23, current + 1));
-                setError("");
-              }}
-            />
-            {oneTimeDeadlinePassed ? (
-              <Text variant="caption" style={{ color: colors.missed }}>
-                Choose a later deadline or another day.
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={{ gap: spacing.sm }}>
-            <SectionHeader title="Who holds you accountable" />
-            <Text variant="caption" style={{ color: colors.textSecondary }}>
-              Circle promises can put a miss on The Wall. Private promises are
-              visible only to you.
-            </Text>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: spacing.sm,
-              }}
-            >
-              {[
-                { id: null, name: "Private" },
-                ...(circlesQuery.data ?? []),
-              ].map((circle) => {
-                const selected = circle.id === circleId;
-                return (
-                  <Pressable
-                    key={circle.id ?? "private"}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    onPress={() => {
-                      circleSelectionInitialized.current = true;
-                      setCircleId(circle.id);
-                    }}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.75 : 1,
-                      minWidth: "47%",
-                      flexGrow: 1,
-                    })}
-                  >
-                    <Card
-                      style={{
-                        padding: spacing.md,
-                        borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? colors.text : colors.border,
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text variant="bodyStrong">{circle.name}</Text>
-                      <Ionicons
-                        name={selected ? "radio-button-on" : "radio-button-off"}
-                        size={18}
-                        color={colors.text}
-                      />
-                    </Card>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={{ gap: spacing.sm }}>
-            <SectionHeader title="Proof" />
-            <Card
-              style={{
-                padding: spacing.md,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: spacing.md,
-              }}
-            >
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: radius.md,
-                  backgroundColor: colors.surfaceMuted,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="camera" size={21} color={colors.text} />
-              </View>
-              <View style={{ flex: 1, gap: spacing.xxs }}>
-                <Text variant="bodyStrong">Fresh live photo</Text>
-                <Text variant="caption" style={{ color: colors.textSecondary }}>
-                  Camera capture only. No photo-library uploads.
-                </Text>
-              </View>
-            </Card>
-          </View>
-
-          <View style={{ gap: spacing.sm }}>
-            <SectionHeader title="Proof opens" />
-            <Text variant="caption" style={{ color: colors.textSecondary }}>
-              Choose how long before the deadline fresh proof becomes available.
-            </Text>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: spacing.sm,
-              }}
-            >
-              {proofWindowChoices.map((choice) => {
-                const selected = choice.minutes === proofWindowMinutes;
-                const locked = !planQuery.data?.isPro && choice.minutes !== 240;
-
-                return (
-                  <Pressable
-                    key={choice.minutes}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected, disabled: locked }}
-                    onPress={() => {
-                      if (locked) {
-                        router.push("/paywall?source=custom_window" as never);
-                        return;
-                      }
-                      setProofWindowMinutes(choice.minutes);
-                    }}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.75 : 1,
-                      width: "47%",
-                    })}
-                  >
-                    <Card
-                      style={{
-                        padding: spacing.md,
-                        borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? colors.text : colors.border,
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text variant="bodyStrong">{choice.label}</Text>
-                      <Ionicons
-                        name={
-                          locked
-                            ? "lock-closed"
-                            : selected
-                              ? "radio-button-on"
-                              : "radio-button-off"
-                        }
-                        size={18}
-                        color={locked ? colors.textSecondary : colors.text}
-                      />
-                    </Card>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text variant="caption" style={{ color: colors.textSecondary }}>
-              {effectiveRecurrenceMode === "weekly"
-                ? `Proof opens at ${proofOpenTime}${
-                    proofOpensPreviousDay ? " the day before" : ""
-                  } for each ${deadlineTime} deadline.`
-                : `${proofTiming} for the ${deadlineTime} deadline.`}
-            </Text>
-          </View>
-
-          <Card style={{ borderWidth: 2, borderColor: colors.text }}>
-            <Text variant="label" style={{ color: colors.textSecondary }}>
-              THE PROMISE
-            </Text>
-            <Text variant="section">{promiseTiming}</Text>
-            <Text style={{ color: colors.textSecondary }}>
-              First promise: {firstPromiseLabel}
-            </Text>
-            <Text style={{ color: colors.textSecondary }}>
-              {proofTiming} · {selectedCircle?.name ?? "Private"}
-            </Text>
-            <Divider />
-            <Text variant="bodyStrong">{consequenceCopy}</Text>
-            <Text variant="caption" style={{ color: colors.textSecondary }}>
-              Redemption answers the callout. It never erases the original miss.
-            </Text>
-          </Card>
-
-          {error ? <Text style={{ color: colors.missed }}>{error}</Text> : null}
-          <Button
-            title="Lock it in"
-            loading={mutation.isPending}
-            disabled={formInvalid}
-            onPress={confirmCommitment}
-          />
-        </>
-      )}
-    </Screen>
-  );
+  return <Screen>
+    <View style={{height:4,backgroundColor:colors.border,borderRadius:2}}><View style={{height:4,width:`${((step+1)/5)*100}%`,backgroundColor:colors.text,borderRadius:2}}/></View>
+    {step===0?<>
+      <Header eyebrow="1 OF 5" title="Name the promise" subtitle="Make it specific enough that nobody can reinterpret it later."/>
+      <Field label="Commitment" value={title} onChangeText={setTitle} maxLength={80}/>
+      <Text variant="caption">WORKOUT TYPE</Text>
+      <View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.xs}}>{workouts.map(item=><Chip key={item.value} label={item.label} selected={workoutType===item.value} onPress={()=>setWorkoutType(item.value)}/>)}</View>
+    </>:step===1?<>
+      <Header eyebrow="2 OF 5" title="Put it on the clock" subtitle="Choose one deadline or a weekly promise."/>
+      <Segmented value={recurrence} onChange={value=>setRecurrence(value)} options={[{value:'one_time',label:'ONE TIME'},{value:'weekly',label:'WEEKLY'}]}/>
+      {recurrence==='weekly'?<>
+        <Text variant="caption">WORKOUT DAYS</Text>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.xs}}>{dayLabels.map((label,index)=>{
+          const active=days.includes(index);
+          return <Pressable key={label} accessibilityRole="button" accessibilityLabel={`${label} workout day`} accessibilityState={{selected:active}} onPress={()=>setDays(active?days.filter(day=>day!==index):[...days,index])} style={{width:54,height:54,alignItems:'center',justifyContent:'center',borderRadius:radius.md,borderWidth:1,borderColor:active?colors.text:colors.border,backgroundColor:active?colors.dark:colors.surface}}><Text variant="caption" style={{color:active?colors.surface:colors.text}}>{label}</Text></Pressable>;
+        })}</View>
+      </>:<>
+        <Text variant="caption">COMMITMENT DATE</Text>
+        <View style={{gap:spacing.xs}}>{[
+          {offset:0,label:'Today'},{offset:1,label:'Tomorrow'},{offset:2,label:new Date(`${isoDate(2)}T12:00:00`).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})},
+        ].map(option=><Card key={option.offset} onPress={()=>setDateOffset(option.offset)} style={{borderColor:dateOffset===option.offset?colors.text:colors.border,backgroundColor:dateOffset===option.offset?colors.dark:colors.surface}}><Text variant="bodyStrong" style={{color:dateOffset===option.offset?colors.surface:colors.text}}>{option.label}</Text></Card>)}</View>
+      </>}
+    </>:step===2?<>
+      <Header eyebrow="3 OF 5" title="Set the deadline" subtitle="The proof window opens before this time. Once it opens, the promise locks."/>
+      <View style={{flexDirection:'row',gap:spacing.sm,alignItems:'flex-end'}}>
+        <View style={{flex:1}}><Field label="Hour" value={hour} onChangeText={setHour} keyboardType="number-pad" maxLength={2}/></View>
+        <Text variant="title" style={{paddingBottom:8}}>:</Text>
+        <View style={{flex:1}}><Field label="Minute" value={minute} onChangeText={setMinute} keyboardType="number-pad" maxLength={2}/></View>
+      </View>
+      <Segmented value={period} onChange={value=>setPeriod(value)} options={[{value:'AM',label:'AM'},{value:'PM',label:'PM'}]}/>
+      <Notice title={`Due ${timeLabel}`} body={`${scheduleLabel}. CalledOut will judge the promise against this exact deadline.`}/>
+    </>:step===3?<>
+      <Header eyebrow="4 OF 5" title="Define the receipt" subtitle="Fresh in-app proof is required. Camera-roll uploads do not count."/>
+      <Field label="Minimum workout minutes" value={duration} onChangeText={setDuration} keyboardType="number-pad"/>
+      <Text variant="caption">PROOF METHOD</Text>
+      <Card onPress={()=>setProof('photo')} style={{borderColor:proof==='photo'?colors.text:colors.border}}><Text variant="card">Live photo</Text><Text style={{color:colors.textSecondary}}>Fresh camera capture with a randomized prompt.</Text></Card>
+      <Card onPress={()=>isPro?setProof('photo_location'):router.push('/paywall')} style={{borderColor:proof==='photo_location'?colors.text:colors.border}}><Text variant="card">Live photo + location {isPro?'':'· PRO'}</Text><Text style={{color:colors.textSecondary}}>Confirms location at capture and checks an approved area when a geofence is configured.</Text></Card>
+      <Field label="Proof window (minutes before deadline)" value={proofWindow} onChangeText={setProofWindow} keyboardType="number-pad"/>
+      <Text variant="caption">WHO WILL SEE THE RESULT?</Text>
+      <Card onPress={()=>setCircleId(null)} style={{borderColor:circleId===null?colors.text:colors.border}}><Text variant="bodyStrong">Only me</Text><Text variant="caption" style={{color:colors.textSecondary}}>Private commitment. No Wall entry for friends.</Text></Card>
+      {circles.data?.map(circle=><Card key={circle.id} onPress={()=>setCircleId(circle.id)} style={{borderColor:circleId===circle.id?colors.text:colors.border}}><Text variant="bodyStrong">{circle.icon} {circle.name}</Text><Text variant="caption" style={{color:colors.textSecondary}}>{circle.member_count??1} members will witness the outcome.</Text></Card>)}
+    </>:<>
+      <Header eyebrow="5 OF 5" title="Choose the consequence" subtitle="The miss remains in history. Redemption proves how you answered it."/>
+      <View style={{gap:spacing.xs}}>{consequences.map((option,index)=><Card key={option} onPress={()=>index===0||isPro?setConsequence(option):router.push('/paywall')} style={{borderColor:consequence===option?colors.text:colors.border}}><Text variant="bodyStrong">{option}{index>0&&!isPro?' · PRO':''}</Text></Card>)}</View>
+      <Field label={`Redemption window (hours)${isPro?'':' · PRO uses 24'}`} value={isPro?redemptionHours:'24'} editable={isPro} onChangeText={setRedemptionHours} keyboardType="number-pad"/>
+      <Card style={{backgroundColor:colors.dark,borderColor:colors.dark}}>
+        <Text variant="label" style={{color:colors.warning}}>YOUR PROMISE</Text>
+        <Text variant="section" style={{color:colors.surface}}>{title}</Text>
+        <Text style={{color:colors.surface}}>{recurrence==='weekly'?'Every ':''}{scheduleLabel} by {timeLabel} · {duration} minutes</Text>
+        <Text style={{color:colors.surface}}>{chosenCircle?`Visible to ${chosenCircle.name}`:'Private'} · {proof==='photo_location'?'Photo + location':'Live photo'}</Text>
+        <Text variant="caption" style={{color:colors.warning}}>MISS IT: {consequence}</Text>
+      </Card>
+    </>}
+    {error?<Notice title="Check the promise" body={error} tone="warning"/>:null}
+    <View style={{gap:spacing.sm}}>
+      <Button title={step===4?'I’m committing':'Continue'} loading={mutation.isPending} onPress={next}/>
+      <Button title={step===0?'Cancel':'Back'} variant="ghost" onPress={()=>step===0?router.back():setStep(step-1)}/>
+    </View>
+  </Screen>;
 }

@@ -1,0 +1,21 @@
+appId: com.calledout.app
+name: Detailed commitment builder
+---
+- launchApp
+- tapOn: "TODAY"
+- tapOn: "+"
+- assertVisible: "Name the promise"
+- tapOn: "Commitment"
+- eraseText
+- inputText: "Upper body"
+- tapOn: "Gym"
+- tapOn: "Continue"
+- tapOn: "WEEKLY"
+- tapOn: "Continue"
+- assertVisible: "Set the deadline"
+- tapOn: "Continue"
+- assertVisible: "Define the receipt"
+- tapOn: "Continue"
+- assertVisible: "Choose the consequence"
+- tapOn: "I’m committing"
+- assertVisible: "Upper body"

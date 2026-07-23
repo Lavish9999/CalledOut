@@ -1,374 +1,98 @@
-import { useRef, useState } from "react";
-import { router, useLocalSearchParams } from "expo-router";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Crypto from "expo-crypto";
-import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, View } from "react-native";
+﻿import { useMemo,useRef,useState } from 'react';
+import { router,useLocalSearchParams } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { CameraView,useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
+import * as Crypto from 'expo-crypto';
+import { View,StyleSheet } from 'react-native';
+import { Button,Card,Loading,Screen,StatusPill,Text } from '../../components/ui';
+import { colors,spacing } from '../../theme/tokens';
+import { submitProof } from '../../features/proofs/api';
+import { getCommitment } from '../../features/commitments/api';
+import { enqueueProof } from '../../lib/upload-queue';
+import { analytics } from '../../lib/analytics';
+import { queryClient,qk } from '../../lib/query';
 
-import { Button, Card, Screen, Text } from "../../components/ui";
-import {
-  submitProof,
-  type ProofVerificationResult,
-} from "../../features/proofs/api";
-import { analytics } from "../../lib/analytics";
-import { enqueueProof } from "../../lib/upload-queue";
-import { queryClient, qk } from "../../lib/query";
-import { colors, radius, spacing } from "../../theme/tokens";
+const prompts=['Hold up two fingers','Give a thumbs-up','Point toward the equipment','Turn your head to the left'];
 
-const prompts = [
-  "Hold up two fingers",
-  "Give a thumbs-up",
-  "Point toward the equipment",
-  "Turn your head to the left",
-];
-
-type CapturedProof = {
-  uri: string;
-  capturedAt: string;
-  submissionId: string;
-};
-
-type LocalResult = ProofVerificationResult | { status: "queued" };
-
-function friendlyProofError(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-
-  if (message.includes("outside the allowed proof window")) {
-    return "The proof window has closed. Return to Today to see the updated promise status.";
-  }
-
-  if (message.includes("camera") || message.includes("photo")) {
-    return "The photo could not be prepared. Retake it and try again.";
-  }
-
-  if (message.includes("restricted")) {
-    return "This account cannot submit proof while access is restricted.";
-  }
-
-  return "Proof could not be sent right now. Check your connection and try again.";
+function promptForCommitment(id:string){
+  const hash=[...id].reduce((total,char)=>total+char.charCodeAt(0),0);
+  return prompts[hash%prompts.length];
+}
+function distanceMeters(a:{latitude:number;longitude:number},b:{latitude:number;longitude:number}){
+  const r=6371e3;const rad=(value:number)=>value*Math.PI/180;
+  const p1=rad(a.latitude),p2=rad(b.latitude),dp=rad(b.latitude-a.latitude),dl=rad(b.longitude-a.longitude);
+  const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*r*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
 }
 
-function ResultScreen({
-  result,
-  onRetake,
-  onDone,
-}: {
-  result: LocalResult;
-  onRetake: () => void;
-  onDone: () => void;
-}) {
-  const verified = result.status === "verified";
-  const review = result.status === "circle_review";
-  const queued = result.status === "queued";
-  const needsMore = result.status === "more_proof_required";
+export default function Capture(){
+  const {commitmentId}=useLocalSearchParams<{commitmentId:string}>();
+  const commitment=useQuery({queryKey:qk.commitment(commitmentId),queryFn:()=>getCommitment(commitmentId),enabled:Boolean(commitmentId)});
+  const [permission,requestPermission]=useCameraPermissions();
+  const camera=useRef<CameraView>(null);
+  const prompt=useMemo(()=>promptForCommitment(commitmentId??''),[commitmentId]);
+  const [promptReady,setPromptReady]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState('');
+  if(commitment.isLoading)return <Screen><Loading/></Screen>;
+  if(!permission)return null;
+  if(!permission.granted)return <Screen><Text variant="title">Camera required</Text><Text>Fresh in-app capture is required for standard proof. You can change permissions in system settings.</Text><Button title="Allow camera" onPress={requestPermission}/><Button title="Cancel" variant="ghost" onPress={()=>router.back()}/></Screen>;
 
-  const icon = verified
-    ? "checkmark-circle"
-    : review
-      ? "people-circle"
-      : queued
-        ? "cloud-offline"
-        : "refresh-circle";
-  const iconColor = verified
-    ? colors.verified
-    : needsMore
-      ? colors.missed
-      : colors.warning;
-  const title = verified
-    ? "Proof approved"
-    : review
-      ? "Sent for review"
-      : queued
-        ? "Saved for retry"
-        : "More proof needed";
-  const body = verified
-    ? "Promise kept. Today and your record will update immediately."
-    : review
-      ? "Fresh proof was received. A person must review the photo before this promise is marked complete."
-      : queued
-        ? "The photo is stored for this account on this phone and will retry automatically while it remains eligible."
-        : "This capture is missing required proof information. Retake fresh proof before the deadline.";
-
-  return (
-    <Screen scroll={false} contentStyle={styles.resultScreen}>
-      <View style={styles.resultIcon}>
-        <Ionicons name={icon} size={64} color={iconColor} />
-      </View>
-      <View style={{ gap: spacing.sm, alignItems: "center" }}>
-        <Text variant="title" style={{ textAlign: "center" }}>
-          {title}
-        </Text>
-        <Text style={{ color: colors.textSecondary, textAlign: "center" }}>
-          {body}
-        </Text>
-      </View>
-      <View style={{ width: "100%", gap: spacing.sm }}>
-        {needsMore ? <Button title="Retake proof" onPress={onRetake} /> : null}
-        <Button
-          title={verified ? "Back to Today" : "Done"}
-          variant={needsMore ? "secondary" : "primary"}
-          onPress={onDone}
-        />
-      </View>
-    </Screen>
-  );
-}
-
-export default function Capture() {
-  const { commitmentId } = useLocalSearchParams<{ commitmentId: string }>();
-  const [permission, requestPermission] = useCameraPermissions();
-  const camera = useRef<CameraView>(null);
-  const [capturing, setCapturing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [captured, setCaptured] = useState<CapturedProof | null>(null);
-  const [result, setResult] = useState<LocalResult | null>(null);
-  const [error, setError] = useState("");
-
-  const prompt =
-    prompts[
-      (commitmentId ?? "")
-        .split("")
-        .reduce((sum, character) => sum + character.charCodeAt(0), 0) %
-        prompts.length
-    ];
-
-  if (!permission) return null;
-
-  if (!permission.granted) {
-    return (
-      <Screen>
-        <Text variant="title">Camera required</Text>
-        <Text>
-          CalledOut accepts fresh in-app proof only. Photo-library uploads are
-          disabled so the capture is tied to this proof window.
-        </Text>
-        <Button title="Allow camera" onPress={requestPermission} />
-        <Button title="Cancel" variant="ghost" onPress={() => router.back()} />
-      </Screen>
-    );
-  }
-
-  async function takePhoto() {
-    if (!commitmentId || !camera.current || capturing) return;
-
-    setCapturing(true);
-    setError("");
-
-    try {
-      analytics.capture("proof_started");
-      const photo = await camera.current.takePictureAsync({
-        quality: 0.76,
-        skipProcessing: false,
-      });
-
-      if (!photo) throw new Error("The camera did not return a photo.");
-
-      setCaptured({
-        uri: photo.uri,
-        capturedAt: new Date().toISOString(),
-        submissionId: Crypto.randomUUID(),
-      });
-    } catch (captureError) {
-      console.error("Proof capture failed", captureError);
-      setError(friendlyProofError(captureError));
-    } finally {
-      setCapturing(false);
-    }
-  }
-
-  async function submitCaptured() {
-    if (!commitmentId || !captured || submitting) return;
-
-    setSubmitting(true);
-    setError("");
-
-    try {
-      const verification = await submitProof({
-        commitmentId,
-        uri: captured.uri,
-        prompt,
-        promptCompleted: true,
-        locationResult: "not_required",
-        capturedAt: captured.capturedAt,
-        submissionId: captured.submissionId,
-      });
-
-      analytics.capture("proof_submitted", { status: verification.status });
-      if (verification.status === "verified") {
-        analytics.capture("proof_verified");
+  async function capture(){
+    if(!commitmentId||!camera.current||!commitment.data)return;
+    setLoading(true);setError('');let photoForRetry:{uri:string}|null=null;let capturedAt=new Date().toISOString();let locationResult:'within_approved_location'|'outside_approved_location'|'unavailable'='unavailable';const submissionId=Crypto.randomUUID();
+    try{
+      analytics.capture('proof_started',{requires_location:commitment.data.requires_location});
+      const photo=await camera.current.takePictureAsync({quality:.78,skipProcessing:false});
+      photoForRetry=photo;capturedAt=new Date().toISOString();
+      if(!photo)throw new Error('The camera did not return a photo.');
+      if(commitment.data.requires_location){
+        let permissionResult=await Location.getForegroundPermissionsAsync();
+        if(!permissionResult.granted)permissionResult=await Location.requestForegroundPermissionsAsync();
+        if(permissionResult.granted){
+          const current=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});
+          const geofence=commitment.data.location_geofence;
+          if(geofence?.latitude!=null&&geofence?.longitude!=null){
+            const distance=distanceMeters(current.coords,geofence);
+            locationResult=distance<=Number(geofence.radius_m??250)?'within_approved_location':'outside_approved_location';
+          }else{locationResult='within_approved_location';}
+        }
       }
-
+      const result=await submitProof({commitmentId,uri:photo.uri,prompt,promptCompleted:promptReady,locationResult,capturedAt,submissionId});
+      analytics.capture('proof_submitted',{status:result?.status});
+      if(result?.status==='verified')analytics.capture('proof_verified');
+      else if(result?.status==='circle_review')analytics.capture('proof_sent_to_review');
+      else if(result?.status==='more_proof_required'||result?.status==='rejected')analytics.capture('proof_rejected',{status:result.status});
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.today }),
-        queryClient.invalidateQueries({
-          queryKey: qk.commitment(commitmentId),
-        }),
+        queryClient.invalidateQueries({queryKey:qk.today}),
+        queryClient.invalidateQueries({queryKey:['wall']}),
       ]);
-      setResult(verification);
-    } catch (submissionError) {
-      console.error("Proof submission failed", submissionError);
-
-      let savedForRetry = false;
-      try {
-        await enqueueProof({
-          commitmentId,
-          uri: captured.uri,
-          prompt,
-          promptCompleted: true,
-          locationResult: "not_required",
-          capturedAt: captured.capturedAt,
-          submissionId: captured.submissionId,
-        });
-        savedForRetry = true;
-      } catch (queueError) {
-        console.error("Could not queue proof", queueError);
-      }
-
-      if (savedForRetry) {
-        setResult({ status: "queued" });
-      } else {
-        setError(friendlyProofError(submissionError));
-      }
-    } finally {
-      setSubmitting(false);
-    }
+      router.replace(`/proof/result/${commitmentId}` as never);
+    }catch(e){
+      if(photoForRetry){
+        await enqueueProof({commitmentId,uri:photoForRetry.uri,prompt,promptCompleted:promptReady,locationResult,capturedAt,submissionId});
+        setError('Upload paused. The receipt was copied into secure app storage and will retry when your connection returns.');
+      }else setError(e instanceof Error?e.message:'Capture failed. Please try again.');
+    }finally{setLoading(false);}
   }
 
-  function retake() {
-    setCaptured(null);
-    setResult(null);
-    setError("");
-  }
-
-  if (result) {
-    return (
-      <ResultScreen
-        result={result}
-        onRetake={retake}
-        onDone={() => router.replace("/(tabs)" as never)}
-      />
-    );
-  }
-
-  if (captured) {
-    return (
-      <View style={styles.stage}>
-        <Image
-          source={{ uri: captured.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
-        <View style={styles.reviewShade} />
-        <View style={styles.overlay}>
-          <Card style={styles.promptCard}>
-            <Text variant="label">REVIEW FRESH PROOF</Text>
-            <Text variant="section">{prompt}</Text>
-            <Text style={{ color: colors.textSecondary }}>
-              Make sure your face, prompt response, and workout environment are
-              visible for the reviewer.
-            </Text>
-          </Card>
-
-          <View style={{ gap: spacing.sm }}>
-            {error ? (
-              <Card style={{ backgroundColor: colors.surface }}>
-                <Text style={{ color: colors.missed }}>{error}</Text>
-              </Card>
-            ) : null}
-            <Button
-              title="Submit fresh proof"
-              loading={submitting}
-              onPress={submitCaptured}
-            />
-            <Button
-              title="Retake"
-              variant="secondary"
-              disabled={submitting}
-              onPress={retake}
-            />
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.stage}>
-      <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="front" />
-      <View style={styles.cameraShade} />
-      <View style={styles.overlay}>
-        <Card style={styles.promptCard}>
-          <Text variant="label">LIVE PROMPT</Text>
-          <Text variant="section">{prompt}</Text>
-          <Text style={{ color: colors.textSecondary }}>
-            Keep your face, prompt response, and workout environment visible. A
-            person may review the photo before the promise is approved.
-          </Text>
-        </Card>
-
-        <View style={{ gap: spacing.sm }}>
-          {error ? (
-            <Card style={{ backgroundColor: colors.surface }}>
-              <Text style={{ color: colors.missed }}>{error}</Text>
-            </Card>
-          ) : null}
-          <Button title="Take photo" loading={capturing} onPress={takePhoto} />
-          <Button
-            title="Cancel"
-            variant="secondary"
-            onPress={() => router.back()}
-          />
-        </View>
+  return <View style={{flex:1,backgroundColor:colors.dark}}>
+    <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="front"/>
+    <View style={s.overlay}>
+      <Card style={{backgroundColor:'rgba(255,255,255,.96)'}}>
+        <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}><Text variant="label">LIVE PROMPT</Text><StatusPill status={promptReady?'ready':'not ready'}/></View>
+        <Text variant="section">{prompt}</Text>
+        <Text>Keep your face and workout environment visible. This prompt is recorded with the fresh capture.</Text>
+        {commitment.data?.requires_location?<Text variant="caption">Location verification is required for this promise.</Text>:null}
+      </Card>
+      <View style={{gap:spacing.sm}}>
+        {error?<Text style={{color:colors.surface,backgroundColor:colors.missed,padding:12}}>{error}</Text>:null}
+        {!promptReady?<Button title="Iâ€™m in position" onPress={()=>setPromptReady(true)}/>:<Button title="Capture receipt" loading={loading} onPress={capture}/>} 
+        <Button title="Cancel" variant="secondary" onPress={()=>router.back()}/>
       </View>
     </View>
-  );
+  </View>;
 }
+const s=StyleSheet.create({overlay:{flex:1,justifyContent:'space-between',padding:spacing.lg,paddingTop:72,paddingBottom:48}});
 
-const styles = StyleSheet.create({
-  stage: {
-    flex: 1,
-    backgroundColor: colors.dark,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: "space-between",
-    padding: spacing.lg,
-    paddingTop: 72,
-    paddingBottom: 48,
-  },
-  promptCard: {
-    backgroundColor: "rgba(255,255,255,.95)",
-    borderRadius: radius.lg,
-  },
-  cameraShade: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(0,0,0,.12)",
-  },
-  reviewShade: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(0,0,0,.28)",
-  },
-  resultScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xl,
-  },
-  resultIcon: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

@@ -101,7 +101,7 @@ declare v_opened int:=0;v_missed int:=0;v_expired int:=0;begin
 end $$;
 
 create or replace view public.wall_rankings as
-select m.circle_id,m.user_id,min(m.id::text)::uuid as id,count(*)::int as missed_count,max(m.missed_at) as most_recent_missed_at,p.completion_rate,
+select m.circle_id,m.user_id,min(m.id) as id,count(*)::int as missed_count,max(m.missed_at) as most_recent_missed_at,p.completion_rate,
  exists(select 1 from redemptions r join missed_commitments mm on mm.id=r.missed_commitment_id where mm.user_id=m.user_id and mm.circle_id=m.circle_id and r.status='in_progress') as redemption_in_progress
 from missed_commitments m join profiles p on p.id=m.user_id where m.wall_visible and m.deleted_at is null and m.circle_id is not null group by m.circle_id,m.user_id,p.completion_rate;
 

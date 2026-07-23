@@ -3,7 +3,7 @@ name: Account deletion request
 ---
 - launchApp
 - tapOn: "PROFILE"
-- tapOn: "Settings & privacy"
+- tapOn: "Settings, safety & privacy"
 - tapOn: "Delete account"
 - tapOn: "Delete account"
 - assertVisible: "You said you were going."

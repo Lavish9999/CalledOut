@@ -1,0 +1,10 @@
+appId: com.calledout.app
+---
+- launchApp
+- tapOn: "PROFILE"
+- tapOn: "Manage recurring commitments"
+- assertVisible: "Recurring commitments"
+- tapOn: "Pause"
+- assertVisible: "PAUSED"
+- tapOn: "Resume"
+- assertVisible: "ACTIVE"

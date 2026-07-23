@@ -71,18 +71,27 @@ export default function SubscriptionScreen() {
     setError(false);
 
     try {
-      const result = await restorePurchases();
-      if (!result.isPro) {
+      const restored = await restorePurchases();
+      if (!restored) {
         setMessage(
           "No active CalledOut Pro purchase was found for this account.",
         );
         return;
       }
-      await syncAccess(true);
+
+      const plan = await reconcilePlanAccess({
+        expectPro: true,
+        attempts: 4,
+        delayMs: 800,
+        force: true,
+      });
+      queryClient.setQueryData(qk.plan, plan);
+      setMessage("Your CalledOut Pro access has been restored.");
     } catch (cause) {
       captureException(cause, { area: "subscription_screen_restore" });
       setError(true);
       setMessage("Purchases could not be restored right now.");
+    } finally {
       setWorking(false);
     }
   }

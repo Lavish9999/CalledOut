@@ -22,12 +22,5 @@
     "@typescript-eslint/utils": "8.64.0",
     "@typescript-eslint/visitor-keys": "8.64.0",
     "@typescript-eslint/type-utils": "8.64.0"
-  },
-  "allowScripts": {
-    "esbuild@0.28.1": true,
-    "unrs-resolver@1.12.2": true
-  },
-  "devDependencies": {
-    "supabase": "^2.109.1"
   }
 }

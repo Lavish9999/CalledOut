@@ -1,5 +1,5 @@
 appId: com.calledout.app
-name: Circle, Wall, and redemption
+name: Circle, Wall, reactions, and redemption
 ---
 - launchApp
 - tapOn: "CIRCLES"
@@ -7,9 +7,15 @@ name: Circle, Wall, and redemption
 - tapOn: "Circle name"
 - inputText: "Receipts Only"
 - tapOn: "Create private circle"
-- tapOn: "THE WALL"
+- assertVisible: "Receipts Only"
+- tapOn: "Receipts Only"
+- assertVisible: "INVITE CODE"
+- tapOn: "Open Wall"
 - assertVisible: "The Wall"
-# Test fixture advances a commitment through the scheduled deadline job.
-- assertVisible: "MISSED"
-- tapOn: "Start redemption"
-- tapOn: "Start redemption"
+# The CI fixture advances a visible circle commitment through the deadline job.
+- assertVisible: "LATEST RECEIPT"
+- tapOn: "We saw that."
+- tapOn: "Answer the miss"
+- assertVisible: "Answer the miss"
+- tapOn: "Start 24-hour redemption"
+- assertVisible: "ON THE CLOCK"

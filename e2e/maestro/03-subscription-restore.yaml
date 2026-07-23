@@ -3,6 +3,7 @@ name: Pro purchase and restore
 ---
 - launchApp
 - tapOn: "PROFILE"
-- tapOn: "CalledOut Pro"
+- tapOn: "Unlock CalledOut Pro"
 - assertVisible: "Make excuses harder."
+- assertVisible: "BEST VALUE"
 - tapOn: "Restore purchases"

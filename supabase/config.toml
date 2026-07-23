@@ -24,18 +24,15 @@ enable_signup = true
 enabled = true
 file_size_limit = "25MiB"
 [functions.verify-proof]
-verify_jwt = false
+verify_jwt = true
 [functions.process-deadlines]
 verify_jwt = false
 [functions.revenuecat-webhook]
 verify_jwt = false
 [functions.request-account-deletion]
-verify_jwt = false
-[functions.store-apple-revocation-token]
-verify_jwt = false
+verify_jwt = true
+
 [functions.dispatch-notifications]
 verify_jwt = false
 [functions.process-account-deletions]
-verify_jwt = false
-[functions.sync-revenuecat-entitlement]
 verify_jwt = false

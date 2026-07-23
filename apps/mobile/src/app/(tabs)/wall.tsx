@@ -1,364 +1,70 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect,useState } from 'react';
+import { router } from 'expo-router';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { Pressable,View } from 'react-native';
+import { Avatar,Button,Card,Chip,EmptyState,Header,Loading,Screen,Segmented,StatusPill,Text } from '../../components/ui';
+import { getWall,reactToMiss } from '../../features/wall/api';
+import { getCircles } from '../../features/circles/api';
+import { queryClient,qk } from '../../lib/query';
+import { analytics } from '../../lib/analytics';
+import { colors,spacing } from '../../theme/tokens';
+import type { WallPeriod } from '../../types/domain';
+import { useSession } from '../../providers/session';
 
-import {
-  Button,
-  Card,
-  EmptyState,
-  Header,
-  Loading,
-  Metric,
-  Screen,
-  StatusPill,
-  Text,
-} from "../../components/ui";
-import { getWall } from "../../features/wall/api";
-import { wallPreviewEntries } from "../../features/wall/preview";
-import { qk } from "../../lib/query";
-import { analytics } from "../../lib/analytics";
-import { colors, radius, spacing } from "../../theme/tokens";
-import type { RedemptionStatus, WallEntry } from "../../types/domain";
+const reactions=[
+  {value:'we_saw_that' as const,label:'We saw that.'},
+  {value:'tomorrow' as const,label:'Tomorrow?'},
+  {value:'no_excuses' as const,label:'No excuses.'},
+  {value:'redemption_time' as const,label:'Redeem it.'},
+];
 
-type WallViewMode = "wall" | "leaderboard";
+export default function Wall(){
+  const [period,setPeriod]=useState<WallPeriod>('week');
+  const [circleId,setCircleId]=useState<string|undefined>(undefined);
+  const {session,isPro}=useSession();
+  const circles=useQuery({queryKey:qk.circles,queryFn:getCircles});
+  const wall=useQuery({queryKey:qk.wall(circleId,period),queryFn:()=>getWall(circleId,period)});
+  const reaction=useMutation({
+    mutationFn:({missedId,value}:{missedId:string;value:'we_saw_that'|'tomorrow'|'no_excuses'|'redemption_time'})=>reactToMiss(missedId,value),
+    onSuccess:(_data,variables)=>{analytics.capture('reaction_sent',{reaction: variables.value});return queryClient.invalidateQueries({queryKey:['wall']});},
+  });
+  useEffect(()=>analytics.capture('wall_viewed',{period}),[period]);
 
-function redemptionLabel(status: RedemptionStatus | null) {
-  if (status === "completed") return "redeemed";
-  if (status === "in_progress") return "redeeming";
-  if (status === "available") return "redemption available";
-  if (status === "expired") return "expired";
-  return null;
-}
-
-function SegmentedControl({
-  value,
-  onChange,
-}: {
-  value: WallViewMode;
-  onChange: (next: WallViewMode) => void;
-}) {
-  const options: WallViewMode[] = ["wall", "leaderboard"];
-
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        gap: spacing.sm,
-      }}
-    >
-      {options.map((option) => {
-        const active = value === option;
-        return (
-          <Pressable
-            key={option}
-            accessibilityRole="button"
-            onPress={() => onChange(option)}
-            style={({ pressed }) => ({
-              flex: 1,
-              minHeight: 46,
-              borderRadius: radius.md,
-              borderWidth: 1,
-              borderColor: active ? colors.dark : colors.border,
-              backgroundColor: active ? colors.dark : colors.surface,
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: pressed ? 0.92 : 1,
-            })}
-          >
-            <Text
-              variant="bodyStrong"
-              style={{ color: active ? colors.surface : colors.text }}
-            >
-              {option === "wall" ? "The Wall" : "Leaderboard"}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function MetricRow({ entries }: { entries: WallEntry[] }) {
-  const totals = useMemo(() => {
-    const totalMisses = entries.reduce((sum, entry) => sum + entry.missed_count, 0);
-    const totalRedeemed = entries.reduce(
-      (sum, entry) => sum + entry.redeemed_count,
-      0,
-    );
-    const averageCompletion = entries.length
-      ? Math.round(
-          entries.reduce((sum, entry) => sum + entry.completion_rate, 0) /
-            entries.length,
-        )
-      : 0;
-
-    return { totalMisses, totalRedeemed, averageCompletion };
-  }, [entries]);
-
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
-      <Metric value={totals.totalMisses} label="total misses" compact />
-      <Metric value={totals.totalRedeemed} label="redeemed" compact />
-      <Metric
-        value={`${totals.averageCompletion}%`}
-        label="avg completion"
-        compact
-      />
-    </View>
-  );
-}
-
-function WallRows({ entries, preview }: { entries: WallEntry[]; preview: boolean }) {
-  return entries.map((entry, index) => {
-    const label = redemptionLabel(entry.latest_redemption_status);
-
-    return (
-      <Pressable
-        key={`${entry.circle_id}-${entry.user_id}`}
-        accessibilityRole="button"
-        onPress={() =>
-          router.push({
-            pathname: "/wall/[userId]",
-            params: {
-              userId: entry.user_id,
-              circleId: entry.circle_id,
-              preview: preview ? "true" : "false",
-            },
-          } as never)
-        }
-        style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
-      >
-        <Card>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: spacing.md,
-            }}
-          >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: radius.md,
-                backgroundColor: colors.surfaceMuted,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text variant="bodyStrong">{index + 1}</Text>
+  return <Screen>
+    <Header eyebrow="PRIVATE CIRCLES" title="The Wall" subtitle="The miss stays visible. Redemption changes what happens next."/>
+    <Segmented value={period} onChange={value=>{if(value!=='week'&&!isPro)router.push('/paywall');else setPeriod(value);}} options={[{value:'week',label:'THIS WEEK'},{value:'month',label:'MONTH'},{value:'all',label:'ALL TIME'}]}/>
+    {circles.data?.length?<View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.xs}}>
+      <Chip label="All circles" selected={!circleId} onPress={()=>setCircleId(undefined)}/>
+      {circles.data.map(circle=><Chip key={circle.id} label={circle.name} selected={circleId===circle.id} onPress={()=>setCircleId(circle.id)}/>) }
+    </View>:null}
+    {wall.isLoading?<Loading/>:wall.data?.length?wall.data.map((entry,index)=>{
+      const mine=entry.user_id===session?.user.id;
+      const miss=entry.latest_miss;
+      return <Card key={entry.user_id} style={index===0?{borderColor:colors.missed,borderWidth:1.5}:undefined}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${entry.profile.display_name}'s accountability record`} onPress={()=>router.push({pathname:'/member/[id]',params:{id:entry.user_id,circleId:entry.circle_id}} as never)}>
+          <View style={{flexDirection:'row',alignItems:'center',gap:spacing.md}}>
+            <Text variant="title" style={{width:34}}>#{index+1}</Text>
+            <Avatar name={entry.profile.display_name}/>
+            <View style={{flex:1}}>
+              <Text variant="card">{entry.profile.display_name}{mine?' · YOU':''}</Text>
+              <Text style={{color:colors.textSecondary}}>@{entry.profile.username}</Text>
+              <Text variant="caption">{entry.missed_count} missed · {entry.redeemed_count} redeemed · {Math.round(entry.completion_rate)}%</Text>
             </View>
-            <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text variant="card">{entry.profile.display_name}</Text>
-              <Text style={{ color: colors.textSecondary }}>
-                @{entry.profile.username}
-              </Text>
-              <Text style={{ color: colors.textSecondary }}>
-                {entry.missed_count} misses · {entry.redeemed_count} redeemed
-              </Text>
-            </View>
-            <View style={{ alignItems: "flex-end", gap: spacing.xs }}>
-              <Text variant="section">{entry.completion_rate}%</Text>
-              <Text variant="caption" style={{ color: colors.textSecondary }}>
-                completion
-              </Text>
-              {label ? <StatusPill status={label} /> : null}
-            </View>
+            {entry.redemption_in_progress?<StatusPill status="redemption"/>:null}
           </View>
-        </Card>
-      </Pressable>
-    );
-  });
-}
-
-function LeaderboardRows({ entries }: { entries: WallEntry[] }) {
-  return entries.map((entry, index) => (
-    <Card key={`leaderboard-${entry.circle_id}-${entry.user_id}`}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing.md,
-        }}
-      >
-        <View
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: radius.md,
-            backgroundColor: index === 0 ? colors.dark : colors.surfaceMuted,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text
-            variant="bodyStrong"
-            style={{ color: index === 0 ? colors.surface : colors.text }}
-          >
-            #{index + 1}
-          </Text>
+        </Pressable>
+        <View style={{height:1,backgroundColor:colors.border}}/>
+        <View style={{gap:spacing.xs}}>
+          <Text variant="label">LATEST RECEIPT</Text>
+          <Text variant="bodyStrong">Missed “{miss.title}”</Text>
+          <Text style={{color:colors.textSecondary}}>{new Date(miss.missed_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</Text>
+          {miss.redeemed_at?<StatusPill status="redeemed"/>:miss.redemption_status?<StatusPill status={miss.redemption_status}/>:null}
+          {miss.redemption_status==='in_progress'&&miss.redemption_deadline_at?<Text variant="caption">Redemption closes {new Date(miss.redemption_deadline_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}</Text>:null}
         </View>
-
-        <View style={{ flex: 1, gap: spacing.xxs }}>
-          <Text variant="card">{entry.profile.display_name}</Text>
-          <Text style={{ color: colors.textSecondary }}>
-            @{entry.profile.username}
-          </Text>
-          <Text style={{ color: colors.textSecondary }}>
-            {entry.missed_count} misses · {entry.redeemed_count} redemptions answered
-          </Text>
-        </View>
-
-        <View style={{ alignItems: "flex-end", gap: spacing.xxs }}>
-          <Text variant="title">{entry.completion_rate}%</Text>
-          <Text variant="caption" style={{ color: colors.textSecondary }}>
-            consistency
-          </Text>
-        </View>
-      </View>
-    </Card>
-  ));
-}
-
-export default function Wall() {
-  const { circleId, circleName } = useLocalSearchParams<{
-    circleId?: string;
-    circleName?: string;
-  }>();
-  const query = useQuery({
-    queryKey: qk.wall(circleId),
-    queryFn: () => getWall(circleId),
-  });
-  const [preview, setPreview] = useState(false);
-  const [mode, setMode] = useState<WallViewMode>("wall");
-  const previewAvailable = __DEV__;
-
-  useEffect(() => analytics.capture("wall_viewed"), []);
-
-  const refetchWall = query.refetch;
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!preview) refetchWall();
-    }, [preview, refetchWall]),
-  );
-
-  const entries = useMemo(
-    () => (preview ? wallPreviewEntries : (query.data ?? [])),
-    [preview, query.data],
-  );
-  const wallEntries = useMemo(
-    () =>
-      [...entries].sort(
-        (a, b) =>
-          b.missed_count - a.missed_count ||
-          new Date(b.most_recent_missed_at).getTime() -
-            new Date(a.most_recent_missed_at).getTime(),
-      ),
-    [entries],
-  );
-
-  const leaderboardEntries = useMemo(
-    () =>
-      [...entries].sort(
-        (a, b) =>
-          b.completion_rate - a.completion_rate ||
-          a.missed_count - b.missed_count ||
-          b.redeemed_count - a.redeemed_count,
-      ),
-    [entries],
-  );
-
-  return (
-    <Screen>
-      <Header
-        eyebrow={circleId ? "CIRCLE WALL" : "PRIVATE CIRCLES"}
-        title={circleName ? `${circleName} Wall` : "The Wall"}
-        subtitle="Miss a day. Get called out. Redemption proves who answered the miss."
-        action={
-          previewAvailable ? (
-            <Button
-              title={preview ? "Exit preview" : "Preview states"}
-              variant="ghost"
-              compact
-              onPress={() => setPreview((value) => !value)}
-            />
-          ) : undefined
-        }
-      />
-
-      {circleId ? (
-        <Card style={{ backgroundColor: colors.surfaceMuted }}>
-          <Text variant="bodyStrong">Showing one circle</Text>
-          <Text style={{ color: colors.textSecondary }}>
-            Rankings and misses are filtered to {circleName ?? "this circle"}.
-          </Text>
-          <Button
-            title="Show all circles"
-            variant="secondary"
-            compact
-            onPress={() => router.replace("/wall" as never)}
-          />
-        </Card>
-      ) : null}
-
-      {preview ? (
-        <Card style={{ backgroundColor: colors.surfaceMuted }}>
-          <Text variant="bodyStrong">Preview data only</Text>
-          <Text style={{ color: colors.textSecondary }}>
-            These sample misses let you review every Wall state. Your records and
-            profile statistics are unchanged.
-          </Text>
-        </Card>
-      ) : null}
-
-      {!preview && query.isLoading ? (
-        <Loading />
-      ) : !preview && query.error ? (
-        <EmptyState title="Could not load The Wall" body={query.error.message} />
-      ) : entries.length ? (
-        <>
-          <MetricRow entries={entries} />
-          <SegmentedControl value={mode} onChange={setMode} />
-
-          {mode === "wall" ? (
-            <Card style={{ backgroundColor: colors.surfaceMuted }}>
-              <Text variant="bodyStrong">Most called out</Text>
-              <Text style={{ color: colors.textSecondary }}>
-                This is the consequence board. Higher on this list means more visible misses.
-              </Text>
-            </Card>
-          ) : (
-            <Card style={{ backgroundColor: colors.surfaceMuted }}>
-              <Text variant="bodyStrong">Circle leaderboard</Text>
-              <Text style={{ color: colors.textSecondary }}>
-                Friendly competition by consistency. Ranked by completion rate, then fewer misses.
-              </Text>
-            </Card>
-          )}
-
-          {mode === "wall" ? (
-            <WallRows entries={wallEntries} preview={preview} />
-          ) : (
-            <LeaderboardRows entries={leaderboardEntries} />
-          )}
-        </>
-      ) : (
-        <EmptyState
-          title="The Wall is clean"
-          body="Nobody in your circles has missed a visible commitment yet."
-          action={
-            previewAvailable ? (
-              <Button
-                title="Preview populated Wall"
-                variant="secondary"
-                onPress={() => setPreview(true)}
-              />
-            ) : undefined
-          }
-        />
-      )}
-    </Screen>
-  );
+        {!mine?<View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.xs}}>{reactions.map(item=><Chip key={item.value} label={item.label} disabled={reaction.isPending} onPress={()=>reaction.mutate({missedId:miss.missed_id,value:item.value})}/>)}</View>:<Text variant="caption" style={{color:colors.textSecondary}}>Your circle can react to this receipt.</Text>}
+        <Text variant="caption" style={{color:colors.textSecondary}}>{entry.reaction_count} reactions</Text>
+        {mine&&!miss.redeemed_at&&['available',null].includes(miss.redemption_status)?<Button title="Answer the miss" variant="danger" onPress={()=>router.push(`/redemption/${miss.commitment_id}` as never)}/>:null}
+      </Card>;
+    }):<EmptyState title="The Wall is clean" body={period==='week'?'Nobody in your circles has missed this week. Keep it that way.':'No visible misses in this period.'}/>}
+  </Screen>;
 }

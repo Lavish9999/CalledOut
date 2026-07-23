@@ -9,3 +9,7 @@ coverage
 apps/mobile/android
 apps/mobile/ios
 supabase/.temp
+
+.calledout-patch-backups/
+typecheck-*.txt
+verify-final.txt

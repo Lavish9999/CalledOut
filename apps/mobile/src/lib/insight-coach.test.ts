@@ -6,9 +6,9 @@ import {
   insightConfidence,
   reliabilityLabel,
 } from "./insight-coach";
-import type { AccountabilityInsights } from "../types/domain";
+import type { AccountabilityCoachInsights } from "../types/domain";
 
-const base: AccountabilityInsights = {
+const base: AccountabilityCoachInsights = {
   resolvedCount: 10,
   completedCount: 8,
   missedCount: 2,

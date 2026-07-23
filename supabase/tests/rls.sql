@@ -1,12 +1,22 @@
 begin;
 create extension if not exists pgtap;
-select plan(5);
-
+select plan(17);
 select has_table('public','profiles','profiles exists');
 select has_table('public','commitments','commitments exists');
 select has_table('public','proof_submissions','proof submissions exists');
+select has_table('public','blocks','blocks exists');
+select has_table('public','reports','reports exists');
 select has_function('public','is_circle_member',array['uuid','uuid'],'membership helper exists');
+select has_function('public','create_commitment_plan',array['text','workout_type','text','integer[]','date','integer','integer','integer','proof_method','boolean','uuid','integer','text','integer'],'commitment plan RPC exists');
+select has_function('public','get_circle_invite',array['uuid'],'circle invite RPC exists');
+select has_function('public','leave_circle',array['uuid'],'leave-circle RPC exists');
+select has_function('public','block_member',array['uuid'],'member block RPC exists');
+select has_function('public','report_member',array['uuid','text','text'],'member report RPC exists');
+select has_function('public','request_circle_review',array['uuid'],'circle review request RPC exists');
+select has_function('public','toggle_miss_reaction',array['uuid','reaction_type'],'reaction toggle RPC exists');
+select has_function('public','dispute_proof',array['uuid','text'],'proof appeal RPC exists');
+select has_function('public','admin_resolve_proof',array['uuid','text','text'],'admin proof decision RPC exists');
 select has_function('public','admin_moderate_user',array['uuid','text','text'],'admin moderation RPC exists');
-
+select has_function('public','admin_resolve_report',array['uuid','text','text'],'admin report resolution RPC exists');
 select * from finish();
 rollback;

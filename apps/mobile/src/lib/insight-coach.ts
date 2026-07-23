@@ -1,4 +1,4 @@
-import type { AccountabilityInsights } from "../types/domain";
+import type { AccountabilityCoachInsights } from "../types/domain";
 
 export function insightConfidence(resolvedCount: number) {
   if (resolvedCount < 3) {
@@ -49,7 +49,7 @@ export function formatProofLead(minutes: number | null) {
   return `${rounded} hr${rounded === 1 ? "" : "s"} early`;
 }
 
-export function buildCoachRead(insights: AccountabilityInsights) {
+export function buildCoachRead(insights: AccountabilityCoachInsights) {
   if (insights.last30Total < 3) {
     const remaining = 3 - insights.last30Total;
     return {

@@ -18,6 +18,8 @@ function member(
       display_name: name,
       username: name.toLowerCase(),
       avatar_path: null,
+      current_streak: 0,
+      completion_rate: completionRate,
     },
     circle_completion_rate: completionRate,
     missed_count: missed,

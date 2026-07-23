@@ -1,456 +1,70 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json"}});
+const allowedPrompts=new Set(['Hold up two fingers','Give a thumbs-up','Point toward the equipment','Turn your head to the left']);
 
-// Edge Functions do not yet consume a generated Database type. Explicit row
-// contracts keep Deno strict checking useful without allowing SDK `never`
-// inference to leak into application logic.
-type AdminClient = any;
-type CircleMemberRow = { user_id: string };
-type BlockRow = { blocker_id: string; blocked_id: string };
+Deno.serve(async(req)=>{
+  try{
+    const auth=req.headers.get('authorization');
+    if(!auth)return json({error:'Unauthorized'},401);
+    const supabase=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{global:{headers:{authorization:auth}}});
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user)return json({error:'Unauthorized'},401);
+    const {submissionId}=await req.json();
+    const {data:p,error}=await supabase.from('proof_submissions').select('*,commitment:commitments(*)').eq('id',submissionId).eq('user_id',user.id).single();
+    if(error||!p)return json({error:'Proof not found'},404);
 
-type CommitmentRecord = {
-  id: string;
-  user_id: string;
-  circle_id: string | null;
-  title: string;
-  proof_window_starts_at: string;
-  deadline_at: string;
-  grace_period_minutes: number;
-  requires_location: boolean;
-};
-
-type ProofRecord = {
-  id: string;
-  commitment_id: string;
-  status: string;
-  verification_score: number | null;
-  captured_at: string;
-  received_at: string;
-  capture_source: string;
-  liveness_completed: boolean;
-  liveness_prompt: string | null;
-  asset_path: string | null;
-  location_result: string;
-  commitment: CommitmentRecord | CommitmentRecord[] | null;
-};
-
-async function finalizePrivateProof(
-  admin: AdminClient,
-  submissionId: string,
-  userId: string,
-) {
-  const finalized = await admin.rpc("finalize_automatic_private_proof", {
-    p_submission: submissionId,
-    p_user: userId,
-  });
-
-  if (finalized.error) {
-    throw new Error(
-      `Private proof finalization failed: ${finalized.error.message}`,
-    );
-  }
-}
-
-async function notifyCircleReviewers(
-  admin: AdminClient,
-  commitment: CommitmentRecord,
-  submissionId: string,
-) {
-  if (!commitment.circle_id) return;
-
-  const [membersResult, blocksResult] = await Promise.all([
-    admin
-      .from("circle_members")
-      .select("user_id")
-      .eq("circle_id", commitment.circle_id)
-      .eq("status", "active")
-      .is("deleted_at", null)
-      .neq("user_id", commitment.user_id),
-    admin
-      .from("blocks")
-      .select("blocker_id,blocked_id")
-      .or(
-        `blocker_id.eq.${commitment.user_id},blocked_id.eq.${commitment.user_id}`,
-      ),
-  ]);
-
-  if (membersResult.error) throw membersResult.error;
-  if (blocksResult.error) throw blocksResult.error;
-
-  const members = (membersResult.data ?? []) as CircleMemberRow[];
-  const blocks = (blocksResult.data ?? []) as BlockRow[];
-  const blockedUsers = new Set<string>();
-
-  for (const block of blocks) {
-    if (block.blocker_id === commitment.user_id) {
-      blockedUsers.add(block.blocked_id);
-    } else if (block.blocked_id === commitment.user_id) {
-      blockedUsers.add(block.blocker_id);
-    }
-  }
-
-  const recipients = members
-    .map((member: CircleMemberRow) => member.user_id)
-    .filter((userId: string) => !blockedUsers.has(userId));
-
-  await Promise.all(
-    recipients.map(async (reviewerId: string) => {
-      const queued = await admin.rpc("queue_user_notification", {
-        p_user: reviewerId,
-        p_category: "review_required",
-        p_title: "Fresh proof needs review",
-        p_body: `${commitment.title} is waiting for a fair prompt and workout check.`,
-        p_data: {
-          route: `/circle/review/${submissionId}`,
-          submission_id: submissionId,
-          commitment_id: commitment.id,
-          circle_id: commitment.circle_id,
-        },
-        p_dedupe_key: `proof-review:${submissionId}:${reviewerId}`,
-        p_deliver_after: new Date().toISOString(),
-      });
-
-      if (queued.error) {
-        console.error("Could not queue proof-review notification", {
-          reviewerId,
-          error: queued.error,
-        });
-      }
-    }),
-  );
-}
-
-Deno.serve(async (req) => {
-  try {
-    const authHeader = req.headers.get("authorization");
-
-    if (!authHeader?.toLowerCase().startsWith("bearer ")) {
-      return json({ error: "Missing authorization token" }, 401);
-    }
-
-    const token = authHeader.replace(/^Bearer\s+/i, "");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      throw new Error("Required Supabase function secrets are missing");
-    }
-
-    const admin: AdminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const {
-      data: { user },
-      error: userError,
-    } = await admin.auth.getUser(token);
-
-    if (userError || !user) {
-      console.error("Proof auth failed", userError);
-      return json({ error: userError?.message ?? "Unauthorized" }, 401);
-    }
-
-    const requestBody = (await req.json()) as { submissionId?: unknown };
-    const submissionId = requestBody.submissionId;
-
-    if (!submissionId || typeof submissionId !== "string") {
-      return json({ error: "submissionId is required" }, 400);
-    }
-
-    const profileResult = await admin
-      .from("profiles")
-      .select("account_status")
-      .eq("id", user.id)
-      .single();
-    const profile = profileResult.data as { account_status?: string } | null;
-
-    if (profileResult.error || profile?.account_status !== "active") {
-      return json({ error: "This CalledOut account is restricted" }, 403);
-    }
-
-    const proofResult = await admin
-      .from("proof_submissions")
-      .select("*, commitment:commitments(*)")
-      .eq("id", submissionId)
-      .eq("user_id", user.id)
-      .single();
-    const proof = proofResult.data as ProofRecord | null;
-
-    if (proofResult.error || !proof) {
-      console.error("Proof lookup failed", proofResult.error);
-      return json(
-        { error: proofResult.error?.message ?? "Proof not found" },
-        404,
-      );
-    }
-
-    const commitment = Array.isArray(proof.commitment)
-      ? (proof.commitment[0] ?? null)
-      : proof.commitment;
-
-    if (!commitment) {
-      return json({ error: "Commitment data was not found" }, 404);
-    }
-
-    if (proof.status === "verified") {
-      return json({
-        status: "verified",
-        score: proof.verification_score,
-        explanation: "This proof was already approved.",
-      });
-    }
-
-    if (proof.status === "circle_review") {
-      if (!commitment.circle_id) {
-        await finalizePrivateProof(admin, submissionId, user.id);
-        return json({
-          status: "verified",
-          score: null,
-          explanation:
-            "Fresh private proof was verified automatically. Promise kept.",
-        });
-      }
-
-      return json({
-        status: "circle_review",
-        score: null,
-        explanation: "This proof is already waiting for circle review.",
-      });
-    }
-
-    if (proof.status === "disputed") {
-      if (commitment.circle_id) {
-        const [proofReset, commitmentReset] = await Promise.all([
-          admin
-            .from("proof_submissions")
-            .update({ status: "circle_review", decided_at: null })
-            .eq("id", submissionId),
-          admin
-            .from("commitments")
-            .update({ status: "under_review", verified_at: null })
-            .eq("id", proof.commitment_id),
-        ]);
-
-        if (proofReset.error) throw proofReset.error;
-        if (commitmentReset.error) throw commitmentReset.error;
-
-        await notifyCircleReviewers(admin, commitment, submissionId).catch(
-          (notificationError: unknown) => {
-            console.error(
-              "Disputed proof review notification failed",
-              notificationError,
-            );
-          },
-        );
-
-        return json({
-          status: "circle_review",
-          score: null,
-          explanation: "The proof was returned to the circle for review.",
-        });
-      }
-
-      const [proofRejected, commitmentRejected] = await Promise.all([
-        admin
-          .from("proof_submissions")
-          .update({
-            status: "rejected",
-            decided_at: new Date().toISOString(),
-            dispute_reason: "Retake fresh private proof before the deadline.",
-          })
-          .eq("id", submissionId),
-        admin
-          .from("commitments")
-          .update({ status: "rejected", verified_at: null })
-          .eq("id", proof.commitment_id),
-      ]);
-
-      if (proofRejected.error) throw proofRejected.error;
-      if (commitmentRejected.error) throw commitmentRejected.error;
-
-      return json({
-        status: "more_proof_required",
-        score: null,
-        explanation: "Retake fresh private proof before the deadline.",
-      });
-    }
-
-    if (proof.status === "rejected") {
-      return json({
-        status: "more_proof_required",
-        score: null,
-        explanation:
-          "This proof was rejected. Retake fresh proof before the deadline.",
-      });
-    }
-
-    const now = Date.now();
-    const capturedAt = new Date(proof.captured_at).getTime();
-    const receivedAt = new Date(proof.received_at).getTime();
-    const windowStartsAt = new Date(
-      commitment.proof_window_starts_at,
-    ).getTime();
-    const deadlineAt =
-      new Date(commitment.deadline_at).getTime() +
-      Number(commitment.grace_period_minutes ?? 0) * 60_000;
-
-    const signals = {
-      inAppCamera: proof.capture_source === "in_app_camera",
-      captureTimestampValid:
-        Number.isFinite(capturedAt) &&
-        capturedAt <= now + 5 * 60_000 &&
-        capturedAt <= receivedAt + 5 * 60_000,
-      withinWindow: capturedAt >= windowStartsAt && capturedAt <= deadlineAt,
-      promptAttached: Boolean(
-        proof.liveness_completed &&
-          typeof proof.liveness_prompt === "string" &&
-          proof.liveness_prompt.trim(),
-      ),
-      assetAttached:
-        typeof proof.asset_path === "string" && proof.asset_path.length > 0,
-      locationReady:
-        !commitment.requires_location ||
-        proof.location_result === "within_approved_location",
+    const captured=new Date(p.captured_at).getTime();
+    const deadline=new Date(p.commitment.deadline_at).getTime();
+    const windowStart=new Date(p.commitment.proof_window_starts_at).getTime();
+    const submitted=new Date(p.created_at).getTime();
+    const promptValid=Boolean(p.liveness_completed&&allowedPrompts.has(p.liveness_prompt));
+    const locationRequired=Boolean(p.commitment.requires_location);
+    const locationMatch=!locationRequired||p.location_result==='within_approved_location';
+    const signals={
+      freshCapture:p.capture_source==='in_app_camera'&&Number.isFinite(captured)&&captured<=submitted&&submitted-captured<48*60*60_000,
+      liveness:promptValid,
+      withinWindow:captured<=deadline+(Number(p.commitment.grace_period_minutes??0)*60_000)&&captured>=windowStart,
+      locationMatch,
+      integrityClean:Boolean(p.asset_path&&p.client_submission_key),
     };
-
-    const checks = [
-      ["in_app_capture", signals.inAppCamera],
-      ["capture_timestamp", signals.captureTimestampValid],
-      ["submission_window", signals.withinWindow],
-      ["prompt_attached", signals.promptAttached],
-      ["asset_attached", signals.assetAttached],
-      ["location_ready", signals.locationReady],
+    const checks=[
+      ['fresh_capture',signals.freshCapture,25],
+      ['liveness_prompt',signals.liveness,20],
+      ['submission_window',signals.withinWindow,15],
+      ['location_match',signals.locationMatch,15],
+      ['integrity_and_duplicate',signals.integrityClean,10],
     ] as const;
+    const score=checks.reduce((sum,[,passed,points])=>sum+(passed?points:0),0);
+    const blockingFailure=!signals.freshCapture||!signals.liveness||!signals.withinWindow||(locationRequired&&!signals.locationMatch);
+    const status=blockingFailure?'more_proof_required':score>=70?'verified':score>=45?'circle_review':'more_proof_required';
+    const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-    const checksUpsert = await admin.from("verification_checks").upsert(
-      checks.map(([checkType, passed]) => ({
-        proof_submission_id: submissionId,
-        check_type: checkType,
-        passed,
-        points_awarded: 0,
-        details: {
-          automated: true,
-          purpose: "submission_readiness_only",
-        },
-        updated_at: new Date().toISOString(),
-      })),
-      { onConflict: "proof_submission_id,check_type" },
-    );
-
-    if (checksUpsert.error) {
-      throw new Error(
-        `Verification checks failed: ${checksUpsert.error.message}`,
-      );
+    await admin.from('verification_checks').delete().eq('proof_submission_id',submissionId);
+    await admin.from('verification_checks').insert(checks.map(([check_type,passed,points])=>({proof_submission_id:submissionId,check_type,passed,points_awarded:passed?points:0,details:{automated:true,blocking:check_type!=='integrity_and_duplicate'}})));
+    await admin.from('proof_submissions').update({status,verification_score:score,decided_at:status==='verified'?new Date().toISOString():null}).eq('id',submissionId);
+    const commitmentStatus=status==='verified'?'verified':status==='circle_review'?'under_review':'proof_window_open';
+    const nowIso=new Date().toISOString();
+    const commitmentUpdate:Record<string,unknown>={status:commitmentStatus,verified_at:status==='verified'?nowIso:null};
+    let recaptureExtended=false;
+    let extendedDeadline:string|null=null;
+    if(status==='more_proof_required'&&deadline<Date.now()+15*60_000){
+      extendedDeadline=new Date(Date.now()+15*60_000).toISOString();
+      commitmentUpdate.deadline_at=extendedDeadline;
+      commitmentUpdate.proof_window_starts_at=nowIso;
+      recaptureExtended=true;
     }
-
-    const readyForDecision = Object.values(signals).every(Boolean);
-
-    if (readyForDecision && !commitment.circle_id) {
-      await finalizePrivateProof(admin, submissionId, user.id);
-
-      const auditInsert = await admin.from("audit_logs").insert({
-        actor_id: user.id,
-        action: "private_proof_readiness_checked",
-        entity_type: "proof_submission",
-        entity_id: submissionId,
-        after_state: {
-          decision: "verified",
-          stored_proof_status: "verified",
-          signals,
-        },
-      });
-
-      if (auditInsert.error) {
-        console.error("Private proof audit log failed", auditInsert.error);
-      }
-
-      return json({
-        status: "verified",
-        score: null,
-        explanation:
-          "Fresh private proof was verified automatically. Promise kept.",
-      });
+    await admin.from('commitments').update(commitmentUpdate).eq('id',p.commitment_id);
+    if(extendedDeadline){
+      await admin.from('redemptions').update({deadline_at:extendedDeadline}).eq('redemption_commitment_id',p.commitment_id).eq('status','in_progress');
     }
-
-    const decision = readyForDecision
-      ? "circle_review"
-      : "more_proof_required";
-    const storedProofStatus = readyForDecision ? "circle_review" : "rejected";
-    const decidedAt = readyForDecision ? null : new Date().toISOString();
-
-    const proofUpdate = await admin
-      .from("proof_submissions")
-      .update({
-        status: storedProofStatus,
-        verification_score: null,
-        decided_at: decidedAt,
-      })
-      .eq("id", submissionId);
-
-    if (proofUpdate.error) {
-      throw new Error(`Proof update failed: ${proofUpdate.error.message}`);
+    if(status==='verified')await admin.from('activity_events').insert({actor_id:user.id,circle_id:p.commitment.circle_id,commitment_id:p.commitment_id,proof_submission_id:submissionId,event_type:'proof_verified',payload:{title:p.commitment.title}});
+    await admin.from('notification_outbox').insert({user_id:user.id,category:'proof_results',title:status==='verified'?'Receipt verified':status==='circle_review'?'Circle review required':'More proof required',body:status==='verified'?`${p.commitment.title} is verified.`:status==='circle_review'?'Your receipt needs circle review.':recaptureExtended?'A required check did not pass. You have 15 minutes to recapture or request circle review.':'A required proof check did not pass. Open CalledOut to review or recapture.',data:{commitment_id:p.commitment_id,submission_id:submissionId}});
+    if(status==='circle_review'&&p.commitment.circle_id){
+      const {data:reviewers}=await admin.from('circle_members').select('user_id').eq('circle_id',p.commitment.circle_id).eq('status','active').neq('user_id',user.id);
+      if(reviewers?.length)await admin.from('notification_outbox').insert(reviewers.map(({user_id})=>({user_id,category:'review_required',title:'Receipt needs review',body:`${p.commitment.title} needs a circle decision.`,data:{circle_id:p.commitment.circle_id,submission_id:submissionId}})));
     }
-
-    const commitmentUpdate = await admin
-      .from("commitments")
-      .update({
-        status: readyForDecision ? "under_review" : "rejected",
-        verified_at: null,
-      })
-      .eq("id", proof.commitment_id);
-
-    if (commitmentUpdate.error) {
-      throw new Error(
-        `Commitment update failed: ${commitmentUpdate.error.message}`,
-      );
-    }
-
-    if (readyForDecision) {
-      await notifyCircleReviewers(admin, commitment, submissionId).catch(
-        (notificationError: unknown) => {
-          console.error("Proof review notification failed", notificationError);
-        },
-      );
-    }
-
-    const auditInsert = await admin.from("audit_logs").insert({
-      actor_id: user.id,
-      action: "proof_submission_readiness_checked",
-      entity_type: "proof_submission",
-      entity_id: submissionId,
-      after_state: {
-        decision,
-        stored_proof_status: storedProofStatus,
-        signals,
-      },
-    });
-
-    if (auditInsert.error) {
-      console.error("Audit log failed", auditInsert.error);
-    }
-
-    return json({
-      status: decision,
-      score: null,
-      explanation: readyForDecision
-        ? "Fresh proof was received and eligible circle members were notified."
-        : "This capture is missing required proof metadata. Retake fresh proof before the deadline.",
-    });
-  } catch (error) {
-    console.error("verify-proof failed", error);
-    return json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unexpected verification error",
-      },
-      500,
-    );
-  }
+    await admin.from('audit_logs').insert({actor_id:user.id,action:'proof_verification_decision',entity_type:'proof_submission',entity_id:submissionId,after_state:{status,score,signals}});
+    return json({status,score,signals,explanation:status==='more_proof_required'?(recaptureExtended?'A required check did not pass. The proof window was extended by 15 minutes for a fresh receipt.':'A required check did not pass. Capture a new receipt or request circle review when available.'):'Automated checks passed. Circle review and disputes remain available.'});
+  }catch(e){console.error(e);return json({error:e instanceof Error?e.message:'Unexpected error'},500);}
 });

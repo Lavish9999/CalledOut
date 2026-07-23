@@ -1,8 +1,100 @@
-import type { WallEntry, WallMissDetail } from "../../types/domain";
+import type {
+  RedemptionStatus,
+  WallEntry,
+  WallMiss,
+  WallMissDetail,
+} from "../../types/domain";
 
 const now = Date.now();
-const hours = (value: number) => new Date(now + value * 60 * 60 * 1000).toISOString();
-const days = (value: number) => new Date(now + value * 24 * 60 * 60 * 1000).toISOString();
+const hours = (value: number) =>
+  new Date(now + value * 60 * 60 * 1000).toISOString();
+const days = (value: number) =>
+  new Date(now + value * 24 * 60 * 60 * 1000).toISOString();
+
+function previewMiss(input: {
+  id: string;
+  userId: string;
+  missedAt: string;
+  title: string;
+  displayName: string;
+  username: string;
+  completionRate: number;
+  redemptionStatus: RedemptionStatus | null;
+  redemptionDeadlineAt?: string | null;
+  redeemedAt?: string | null;
+  reactionCount?: number;
+}): WallMiss {
+  return {
+    missed_id: input.id,
+    commitment_id: `${input.id}-commitment`,
+    circle_id: "preview-circle",
+    user_id: input.userId,
+    missed_at: input.missedAt,
+    redeemed_at: input.redeemedAt ?? null,
+    title: input.title,
+    workout_type: "gym",
+    deadline_at: input.missedAt,
+    display_name: input.displayName,
+    username: input.username,
+    avatar_path: null,
+    completion_rate: input.completionRate,
+    redemption_status: input.redemptionStatus,
+    redemption_deadline_at: input.redemptionDeadlineAt ?? null,
+    reaction_count: input.reactionCount ?? 0,
+  };
+}
+
+const jordanMiss = previewMiss({
+  id: "preview-miss-jordan",
+  userId: "preview-user-1",
+  missedAt: days(-1),
+  title: "Upper body",
+  displayName: "Jordan",
+  username: "jordanmoves",
+  completionRate: 63,
+  redemptionStatus: "in_progress",
+  redemptionDeadlineAt: hours(8),
+  reactionCount: 7,
+});
+
+const mayaMiss = previewMiss({
+  id: "preview-miss-maya",
+  userId: "preview-user-2",
+  missedAt: days(-2),
+  title: "5K run",
+  displayName: "Maya",
+  username: "mayatrains",
+  completionRate: 78,
+  redemptionStatus: "completed",
+  redeemedAt: days(-1),
+  reactionCount: 5,
+});
+
+const chrisMiss = previewMiss({
+  id: "preview-miss-chris",
+  userId: "preview-user-3",
+  missedAt: days(-3),
+  title: "Leg day",
+  displayName: "Chris",
+  username: "chrischecks",
+  completionRate: 71,
+  redemptionStatus: "available",
+  redemptionDeadlineAt: hours(18),
+  reactionCount: 3,
+});
+
+const taylorMiss = previewMiss({
+  id: "preview-miss-taylor",
+  userId: "preview-user-4",
+  missedAt: days(-6),
+  title: "Recovery walk",
+  displayName: "Taylor",
+  username: "taylorstrong",
+  completionRate: 88,
+  redemptionStatus: "expired",
+  redemptionDeadlineAt: days(-5),
+  reactionCount: 1,
+});
 
 export const wallPreviewEntries: WallEntry[] = [
   {
@@ -11,8 +103,11 @@ export const wallPreviewEntries: WallEntry[] = [
     circle_id: "preview-circle",
     missed_count: 4,
     redeemed_count: 1,
-    most_recent_missed_at: days(-1),
+    most_recent_missed_at: jordanMiss.missed_at,
     completion_rate: 63,
+    redemption_in_progress: true,
+    reaction_count: jordanMiss.reaction_count,
+    latest_miss: jordanMiss,
     latest_redemption_status: "in_progress",
     profile: {
       display_name: "Jordan",
@@ -26,8 +121,11 @@ export const wallPreviewEntries: WallEntry[] = [
     circle_id: "preview-circle",
     missed_count: 3,
     redeemed_count: 3,
-    most_recent_missed_at: days(-2),
+    most_recent_missed_at: mayaMiss.missed_at,
     completion_rate: 78,
+    redemption_in_progress: false,
+    reaction_count: mayaMiss.reaction_count,
+    latest_miss: mayaMiss,
     latest_redemption_status: "completed",
     profile: {
       display_name: "Maya",
@@ -41,8 +139,11 @@ export const wallPreviewEntries: WallEntry[] = [
     circle_id: "preview-circle",
     missed_count: 2,
     redeemed_count: 0,
-    most_recent_missed_at: days(-3),
+    most_recent_missed_at: chrisMiss.missed_at,
     completion_rate: 71,
+    redemption_in_progress: false,
+    reaction_count: chrisMiss.reaction_count,
+    latest_miss: chrisMiss,
     latest_redemption_status: "available",
     profile: {
       display_name: "Chris",
@@ -56,8 +157,11 @@ export const wallPreviewEntries: WallEntry[] = [
     circle_id: "preview-circle",
     missed_count: 1,
     redeemed_count: 0,
-    most_recent_missed_at: days(-6),
+    most_recent_missed_at: taylorMiss.missed_at,
     completion_rate: 88,
+    redemption_in_progress: false,
+    reaction_count: taylorMiss.reaction_count,
+    latest_miss: taylorMiss,
     latest_redemption_status: "expired",
     profile: {
       display_name: "Taylor",
