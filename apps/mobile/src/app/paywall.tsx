@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { PACKAGE_TYPE, type PurchasesPackage } from "react-native-purchases";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { FontAwesome5, Ionicons } from "@expo/vector-icons";
 
 import {
   Button,
@@ -448,11 +448,7 @@ export default function Paywall() {
       <View style={styles.hero}>
         <View style={styles.heroCopy}>
           <View style={styles.proBadge}>
-            <MaterialCommunityIcons
-              name="crown-outline"
-              size={20}
-              color={gold}
-            />
+            <FontAwesome5 name="crown" solid size={17} color={gold} />
             <Text variant="label" style={{ color: colors.text }}>
               CALLEDOUT PRO
             </Text>
@@ -467,7 +463,7 @@ export default function Paywall() {
 
         <View style={styles.crownTile}>
           <View style={styles.crownGlow} />
-          <MaterialCommunityIcons name="crown" size={58} color={goldBright} />
+          <FontAwesome5 name="crown" solid size={48} color={goldBright} />
         </View>
       </View>
 
@@ -622,7 +618,9 @@ export default function Paywall() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              selected ? `Continue with ${packageLabel(selected)}` : "Continue"
+              selected
+                ? `Continue with ${packageLabel(selected)}`
+                : "Continue"
             }
             disabled={!selected || purchasing}
             onPress={buy}
@@ -636,11 +634,7 @@ export default function Paywall() {
               <ActivityIndicator color={colors.surface} />
             ) : (
               <>
-                <MaterialCommunityIcons
-                  name="crown-outline"
-                  size={28}
-                  color={goldSoft}
-                />
+                <FontAwesome5 name="crown" solid size={23} color={goldSoft} />
                 <Text variant="section" style={{ color: colors.surface }}>
                   {selected
                     ? `Continue with ${packageLabel(selected)}`
@@ -677,7 +671,12 @@ export default function Paywall() {
       )}
 
       {message ? (
-        <View style={[styles.messageCard, { borderColor: messageColor }]}>
+        <View
+          style={[
+            styles.messageCard,
+            { borderColor: messageColor },
+          ]}
+        >
           <Ionicons
             name={
               messageTone === "success"
@@ -879,24 +878,23 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   selectionIndicator: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
   },
   selectionIndicatorAnnual: {
     borderColor: goldSoft,
-    backgroundColor: "transparent",
+    backgroundColor: colors.transparent,
   },
   selectionIndicatorAnnualChosen: {
-    borderColor: goldSoft,
     backgroundColor: goldSoft,
   },
   selectionIndicatorMonthly: {
     borderColor: colors.textSecondary,
-    backgroundColor: "transparent",
+    backgroundColor: colors.transparent,
   },
   selectionIndicatorMonthlyChosen: {
     borderColor: colors.dark,
