@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { PACKAGE_TYPE, type PurchasesPackage } from "react-native-purchases";
@@ -38,25 +38,30 @@ import {
 } from "../lib/subscription-display";
 import { colors, radius, spacing } from "../theme/tokens";
 
+const gold = "#B7791F";
+const goldBright = "#D6A12A";
+const goldSoft = "#F8E7B7";
+const goldWash = "#FCF7EA";
+
 const features = [
   {
-    icon: "repeat" as const,
-    title: "Up to 5 workout schedules",
+    icon: "people" as const,
+    title: "More accountability circles",
+    body: "Up to 5 circles to keep family, friends, and training partners separate.",
+  },
+  {
+    icon: "calendar" as const,
+    title: "More workout schedules",
     body: "Run different plans for gym days, runs, sports, and recovery.",
   },
   {
-    icon: "people" as const,
-    title: "Up to 5 accountability circles",
-    body: "Keep family, friends, and training partners separate.",
-  },
-  {
     icon: "shield-checkmark" as const,
-    title: "2 grace passes each month",
-    body: "Free includes one. Pro adds one more for real-life interruptions.",
+    title: "Extra grace passes",
+    body: "2 passes each month for the real-life interruptions you cannot control.",
   },
   {
     icon: "analytics" as const,
-    title: "Accountability insights",
+    title: "Deeper accountability insights",
     body: "See your strongest weekday, workout type, and 30-day completion rate.",
   },
   {
@@ -110,7 +115,7 @@ function planPriceCopy(pkg: PurchasesPackage) {
   if (pkg.packageType === PACKAGE_TYPE.ANNUAL) {
     const monthly = pkg.product.pricePerMonthString;
     return monthly
-      ? `${monthly}/month · ${pkg.product.priceString}/year`
+      ? `${monthly}/month · ${pkg.product.priceString} billed annually`
       : `${pkg.product.priceString}/year`;
   }
 
@@ -160,6 +165,7 @@ export default function Paywall() {
   );
   const savings = annualSavings(packages);
   const alreadyPro = planQuery.data?.isPro === true;
+  const selectedAnnual = selected?.packageType === PACKAGE_TYPE.ANNUAL;
 
   async function syncConfirmedPurchase() {
     const plan = await reconcilePlanAccess({
@@ -293,208 +299,371 @@ export default function Paywall() {
         ? colors.missed
         : colors.textSecondary;
 
-  return (
-    <Screen>
-      <Header
-        eyebrow="CALLEDOUT PRO"
-        title={
-          alreadyPro
-            ? "Your plan is active."
-            : "Build a system you cannot ignore."
-        }
-        subtitle={
-          alreadyPro
-            ? "Your Pro limits and benefits are unlocked."
-            : "The core accountability loop stays free. Pro expands the system around it."
-        }
-        backLabel="Profile"
-        onBack={router.back}
-      />
+  if (alreadyPro) {
+    return (
+      <Screen>
+        <Header
+          eyebrow="CALLEDOUT PRO"
+          title="Your plan is active."
+          subtitle="Your Pro limits and benefits are unlocked."
+          backLabel="Profile"
+          onBack={router.back}
+        />
 
-      {alreadyPro && planQuery.data ? (
-        <Card style={{ gap: spacing.md }}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: spacing.md,
-            }}
-          >
-            <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text variant="section">
-                {subscriptionPlanName(planQuery.data.productId)}
-              </Text>
-              <Text variant="caption" style={{ color: colors.textSecondary }}>
-                CalledOut Pro
-              </Text>
+        {planQuery.data ? (
+          <Card style={{ gap: spacing.md }}>
+            <View style={styles.activePlanHeader}>
+              <View style={{ flex: 1, gap: spacing.xxs }}>
+                <Text variant="section">
+                  {subscriptionPlanName(planQuery.data.productId)}
+                </Text>
+                <Text variant="caption" style={{ color: colors.textSecondary }}>
+                  CalledOut Pro
+                </Text>
+              </View>
+              <StatusPill
+                status={subscriptionStatusLabel(
+                  planQuery.data.subscriptionStatus,
+                )}
+              />
             </View>
-            <StatusPill
-              status={subscriptionStatusLabel(
-                planQuery.data.subscriptionStatus,
-              )}
+
+            {planQuery.data.currentPeriodEndsAt ? (
+              <Text style={{ color: colors.textSecondary }}>
+                {subscriptionPeriodVerb(planQuery.data)}{" "}
+                {dateLabel(planQuery.data.currentPeriodEndsAt)}
+              </Text>
+            ) : (
+              <Text style={{ color: colors.textSecondary }}>
+                Your subscription is active and managed by your app store account.
+              </Text>
+            )}
+
+            {planQuery.data.isSandbox ? (
+              <Text variant="caption" style={{ color: colors.warning }}>
+                Sandbox subscription · no real charge
+              </Text>
+            ) : null}
+
+            <Button
+              title="Manage subscription"
+              variant="secondary"
+              onPress={() => openSubscriptionManagement()}
             />
-          </View>
+          </Card>
+        ) : null}
 
-          {planQuery.data.currentPeriodEndsAt ? (
-            <Text style={{ color: colors.textSecondary }}>
-              {subscriptionPeriodVerb(planQuery.data)}{" "}
-              {dateLabel(planQuery.data.currentPeriodEndsAt)}
-            </Text>
-          ) : (
-            <Text style={{ color: colors.textSecondary }}>
-              Your subscription is active and managed by your app store account.
-            </Text>
-          )}
-
-          {planQuery.data.isSandbox ? (
-            <Text variant="caption" style={{ color: colors.warning }}>
-              Sandbox subscription · no real charge
-            </Text>
-          ) : null}
-
-          <Button
-            title="Manage subscription"
-            variant="secondary"
-            onPress={() => openSubscriptionManagement()}
-          />
+        <SectionHeader title="What Pro unlocks" />
+        <Card style={{ gap: spacing.lg }}>
+          {features.map((feature) => (
+            <View key={feature.title} style={styles.compactFeatureRow}>
+              <View style={styles.compactFeatureIcon}>
+                <Ionicons name={feature.icon} size={19} color={colors.text} />
+              </View>
+              <View style={{ flex: 1, gap: spacing.xxs }}>
+                <Text variant="bodyStrong">{feature.title}</Text>
+                <Text variant="caption" style={{ color: colors.textSecondary }}>
+                  {feature.body}
+                </Text>
+              </View>
+            </View>
+          ))}
         </Card>
-      ) : null}
 
-      <SectionHeader title="What Pro unlocks" />
-      <Card style={{ gap: spacing.lg }}>
-        {features.map((feature) => (
-          <View
-            key={feature.title}
-            style={{ flexDirection: "row", gap: spacing.md }}
-          >
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: radius.md,
-                backgroundColor: colors.surfaceMuted,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name={feature.icon} size={19} color={colors.text} />
+        {message ? (
+          <View style={[styles.messageCard, { borderColor: messageColor }]}>
+            <Ionicons
+              name={
+                messageTone === "success"
+                  ? "checkmark-circle"
+                  : messageTone === "error"
+                    ? "alert-circle"
+                    : "information-circle"
+              }
+              size={20}
+              color={messageColor}
+            />
+            <Text variant="caption" style={{ color: messageColor, flex: 1 }}>
+              {message}
+            </Text>
+          </View>
+        ) : null}
+
+        <Button
+          title="Restore purchases"
+          variant="secondary"
+          loading={purchasing}
+          onPress={restore}
+        />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen contentStyle={styles.screen}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to Profile"
+        onPress={() => router.back()}
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.backButton,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Ionicons name="chevron-back" size={20} color={colors.text} />
+        <Text variant="caption">Profile</Text>
+      </Pressable>
+
+      <View style={styles.hero}>
+        <View style={styles.heroCopy}>
+          <View style={styles.proBadge}>
+            <Text style={styles.crownGlyph}>♛</Text>
+            <Text variant="label" style={{ color: colors.text }}>
+              CALLEDOUT PRO
+            </Text>
+          </View>
+          <Text variant="display" style={styles.heroTitle}>
+            Level up your accountability.
+          </Text>
+          <Text variant="label" style={styles.heroEyebrow}>
+            STRONGER FOLLOW-THROUGH. FEWER EXCUSES. REAL RESULTS.
+          </Text>
+        </View>
+
+        <View style={styles.crownTile}>
+          <View style={styles.crownGlow} />
+          <Text style={styles.heroCrown}>♛</Text>
+        </View>
+      </View>
+
+      <View style={styles.featurePanel}>
+        {features.map((feature, index) => (
+          <View key={feature.title}>
+            <View style={styles.featureRow}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={feature.icon} size={22} color={colors.text} />
+              </View>
+              <View style={styles.featureCopy}>
+                <Text variant="bodyStrong" style={styles.featureTitle}>
+                  {feature.title}
+                </Text>
+                <Text variant="caption" style={{ color: colors.textSecondary }}>
+                  {feature.body}
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={goldBright}
+              />
             </View>
-            <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text variant="bodyStrong">{feature.title}</Text>
-              <Text variant="caption" style={{ color: colors.textSecondary }}>
-                {feature.body}
-              </Text>
-            </View>
+            {index < features.length - 1 ? <View style={styles.divider} /> : null}
           </View>
         ))}
-      </Card>
+      </View>
 
-      {!alreadyPro ? (
-        <>
-          <SectionHeader title="Choose your plan" />
-          {loadingStore || planQuery.isLoading ? (
-            <Loading />
-          ) : packages.length ? (
-            <View style={{ gap: spacing.sm }}>
-              {packages.map((pkg) => {
-                const chosen = pkg.identifier === selected?.identifier;
-                const annual = pkg.packageType === PACKAGE_TYPE.ANNUAL;
-                const intro = introCopy(pkg);
+      <View style={styles.sectionLabelRow}>
+        <View style={styles.sectionLine} />
+        <Text variant="label" style={{ color: gold }}>
+          CHOOSE YOUR PLAN
+        </Text>
+        <View style={styles.sectionLine} />
+      </View>
 
-                return (
-                  <Pressable
-                    key={pkg.identifier}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: chosen }}
-                    onPress={() => setSelectedId(pkg.identifier)}
-                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-                  >
-                    <Card
-                      style={{
-                        borderColor: chosen ? colors.text : colors.border,
-                        borderWidth: chosen ? 2 : 1,
-                        gap: spacing.sm,
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: spacing.md,
-                        }}
-                      >
-                        <View style={{ flex: 1, gap: spacing.xxs }}>
-                          <Text variant="section">{packageLabel(pkg)}</Text>
-                          <Text style={{ color: colors.textSecondary }}>
-                            {planPriceCopy(pkg)}
+      {loadingStore || planQuery.isLoading ? (
+        <Loading />
+      ) : packages.length ? (
+        <View style={{ gap: spacing.sm }}>
+          {packages.map((pkg) => {
+            const chosen = pkg.identifier === selected?.identifier;
+            const annual = pkg.packageType === PACKAGE_TYPE.ANNUAL;
+            const intro = introCopy(pkg);
+
+            return (
+              <Pressable
+                key={pkg.identifier}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: chosen }}
+                onPress={() => setSelectedId(pkg.identifier)}
+                style={({ pressed }) => [
+                  styles.planPressable,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.planCard,
+                    annual ? styles.annualPlan : styles.monthlyPlan,
+                    !annual && chosen ? styles.monthlyPlanChosen : null,
+                  ]}
+                >
+                  <View style={styles.planHeader}>
+                    <View style={{ flex: 1, gap: spacing.xxs }}>
+                      {annual ? (
+                        <View style={styles.bestValuePill}>
+                          <Text variant="label" style={{ color: colors.dark }}>
+                            BEST VALUE
                           </Text>
                         </View>
-                        {annual && savings ? (
-                          <StatusPill status={`save ${savings}%`} />
-                        ) : (
-                          <Ionicons
-                            name={
-                              chosen ? "radio-button-on" : "radio-button-off"
-                            }
-                            size={24}
-                            color={colors.text}
-                          />
-                        )}
-                      </View>
-                      {intro ? (
-                        <Text
-                          variant="caption"
-                          style={{ color: colors.verified }}
-                        >
-                          {intro}
-                        </Text>
                       ) : null}
-                    </Card>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        variant="section"
+                        style={{ color: annual ? colors.surface : colors.text }}
+                      >
+                        {packageLabel(pkg)}
+                      </Text>
+                      <Text
+                        style={{
+                          color: annual ? goldSoft : colors.textSecondary,
+                        }}
+                      >
+                        {planPriceCopy(pkg)}
+                      </Text>
+                    </View>
 
-              <Button
-                title={
-                  selected
-                    ? `Continue with ${packageLabel(selected)}`
-                    : "Continue"
-                }
-                loading={purchasing}
-                disabled={!selected}
-                onPress={buy}
-              />
-              <Text
-                variant="caption"
-                style={{ color: colors.textSecondary, textAlign: "center" }}
-              >
-                Cancel anytime in your App Store account.
+                    <View style={styles.planChoiceArea}>
+                      {annual && savings ? (
+                        <View style={styles.savingsPill}>
+                          <Text variant="label" style={{ color: goldSoft }}>
+                            SAVE {savings}%
+                          </Text>
+                        </View>
+                      ) : null}
+                      <Ionicons
+                        name={chosen ? "radio-button-on" : "radio-button-off"}
+                        size={30}
+                        color={annual ? goldSoft : colors.textSecondary}
+                      />
+                    </View>
+                  </View>
+
+                  {annual ? (
+                    <View style={styles.annualBenefits}>
+                      <View style={styles.annualBenefit}>
+                        <Ionicons name="trophy-outline" size={18} color={goldSoft} />
+                        <Text variant="caption" style={{ color: colors.surface }}>
+                          Best monthly price
+                        </Text>
+                      </View>
+                      <View style={styles.benefitDivider} />
+                      <View style={styles.annualBenefit}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color={goldSoft}
+                        />
+                        <Text variant="caption" style={{ color: colors.surface }}>
+                          One annual renewal
+                        </Text>
+                      </View>
+                      <View style={styles.benefitDivider} />
+                      <View style={styles.annualBenefit}>
+                        <Ionicons name="lock-closed" size={18} color={goldSoft} />
+                        <Text variant="caption" style={{ color: colors.surface }}>
+                          Cancel anytime
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {intro ? (
+                    <Text
+                      variant="caption"
+                      style={{ color: annual ? goldSoft : colors.verified }}
+                    >
+                      {intro}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+
+          {selectedAnnual ? (
+            <View style={styles.socialProof}>
+              <Ionicons name="star" size={16} color={goldBright} />
+              <Text variant="caption" style={{ color: gold }}>
+                Most members choose annual.
               </Text>
             </View>
-          ) : (
-            <Card style={{ gap: spacing.sm }}>
-              <Text variant="bodyStrong">
-                Plans are temporarily unavailable
-              </Text>
-              <Text style={{ color: colors.textSecondary }}>
-                The free app remains fully usable. Try again after checking your
-                connection.
-              </Text>
-              {!purchasesConfigured() ? (
-                <Text variant="caption" style={{ color: colors.textSecondary }}>
-                  Store configuration is still being completed for this build.
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              selected
+                ? `Continue with ${packageLabel(selected)}`
+                : "Continue"
+            }
+            disabled={!selected || purchasing}
+            onPress={buy}
+            style={({ pressed }) => [
+              styles.primaryCta,
+              pressed && styles.pressed,
+              (!selected || purchasing) && styles.disabled,
+            ]}
+          >
+            {purchasing ? (
+              <ActivityIndicator color={colors.surface} />
+            ) : (
+              <>
+                <Text style={styles.ctaCrown}>♛</Text>
+                <Text variant="section" style={{ color: colors.surface }}>
+                  {selected
+                    ? `Continue with ${packageLabel(selected)}`
+                    : "Continue"}
                 </Text>
-              ) : null}
-            </Card>
-          )}
-        </>
+              </>
+            )}
+          </Pressable>
+
+          <View style={styles.cancelRow}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={16}
+              color={colors.textSecondary}
+            />
+            <Text variant="caption" style={{ color: colors.textSecondary }}>
+              Cancel anytime in your App Store account.
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Card style={{ gap: spacing.sm }}>
+          <Text variant="bodyStrong">Plans are temporarily unavailable</Text>
+          <Text style={{ color: colors.textSecondary }}>
+            The free app remains fully usable. Try again after checking your
+            connection.
+          </Text>
+          {!purchasesConfigured() ? (
+            <Text variant="caption" style={{ color: colors.textSecondary }}>
+              Store configuration is still being completed for this build.
+            </Text>
+          ) : null}
+        </Card>
+      )}
+
+      {message ? (
+        <View style={[styles.messageCard, { borderColor: messageColor }]}>
+          <Ionicons
+            name={
+              messageTone === "success"
+                ? "checkmark-circle"
+                : messageTone === "error"
+                  ? "alert-circle"
+                  : "information-circle"
+            }
+            size={20}
+            color={messageColor}
+          />
+          <Text variant="caption" style={{ color: messageColor, flex: 1 }}>
+            {message}
+          </Text>
+        </View>
       ) : null}
 
-      {message ? <Text style={{ color: messageColor }}>{message}</Text> : null}
-
-      {purchaseConfirmed && !alreadyPro ? (
+      {purchaseConfirmed ? (
         <Button
           title="Sync Pro access"
           loading={purchasing}
@@ -509,12 +678,281 @@ export default function Paywall() {
         onPress={restore}
       />
 
-      <Text variant="caption" style={{ color: colors.textSecondary }}>
+      <Text variant="caption" style={styles.legalCopy}>
         Payment is charged to your app store account. Subscriptions renew
-        automatically unless canceled in your account settings. Proof
-        submission, existing records, and account access remain available if Pro
-        ends.
+        automatically unless canceled in your account settings. Proof submission,
+        existing records, and account access remain available if Pro ends.
       </Text>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    gap: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  backButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    minHeight: 32,
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  hero: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  heroCopy: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  proBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  crownGlyph: {
+    color: gold,
+    fontSize: 20,
+    lineHeight: 22,
+  },
+  heroTitle: {
+    fontSize: 42,
+    lineHeight: 44,
+    letterSpacing: -1.4,
+  },
+  heroEyebrow: {
+    color: colors.textSecondary,
+    lineHeight: 19,
+  },
+  crownTile: {
+    width: 102,
+    height: 118,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#EEE1C4",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: gold,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 5,
+    overflow: "hidden",
+  },
+  crownGlow: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: goldWash,
+    opacity: 0.9,
+  },
+  heroCrown: {
+    color: goldBright,
+    fontSize: 58,
+    lineHeight: 64,
+    textShadowColor: "rgba(183,121,31,0.25)",
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 8,
+  },
+  featurePanel: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  featureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  featureIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: goldWash,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureCopy: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  featureTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  divider: {
+    height: 1,
+    marginLeft: 78,
+    backgroundColor: colors.border,
+  },
+  sectionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  sectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E8D7B1",
+  },
+  planPressable: {
+    borderRadius: radius.xl,
+  },
+  planCard: {
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  annualPlan: {
+    backgroundColor: colors.dark,
+    borderWidth: 2,
+    borderColor: goldBright,
+    shadowColor: gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  monthlyPlan: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  monthlyPlanChosen: {
+    borderWidth: 2,
+    borderColor: colors.text,
+  },
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  planChoiceArea: {
+    alignItems: "flex-end",
+    gap: spacing.md,
+  },
+  bestValuePill: {
+    alignSelf: "flex-start",
+    backgroundColor: goldSoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  savingsPill: {
+    borderWidth: 1,
+    borderColor: goldBright,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  annualBenefits: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: spacing.sm,
+  },
+  annualBenefit: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xxs,
+  },
+  benefitDivider: {
+    width: 1,
+    backgroundColor: "rgba(248,231,183,0.22)",
+  },
+  socialProof: {
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: goldWash,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  primaryCta: {
+    minHeight: 60,
+    borderRadius: radius.lg,
+    backgroundColor: colors.dark,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  ctaCrown: {
+    color: goldSoft,
+    fontSize: 28,
+    lineHeight: 32,
+  },
+  cancelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+  },
+  messageCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  legalCopy: {
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  activePlanHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  compactFeatureRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  compactFeatureIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
