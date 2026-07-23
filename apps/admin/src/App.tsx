@@ -105,11 +105,10 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
     queryKey: ['admin', 'metrics'],
     queryFn: async () => {
       const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-      const [users, commitments, proofs, misses, redemptions, circles, subscriptions, reports] =
+      const [users, commitments, misses, redemptions, circles, subscriptions, reports] =
         await Promise.all([
           supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', since),
           supabase.from('commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
-          supabase.from('proof_submissions').select('*', { count: 'exact', head: true }).gte('created_at', since),
           supabase.from('missed_commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
           supabase.from('redemptions').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', since),
           supabase.from('circles').select('*', { count: 'exact', head: true }).gte('created_at', since),
@@ -120,7 +119,6 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
       return {
         newUsers: users.count ?? 0,
         commitments: commitments.count ?? 0,
-        proofs: proofs.count ?? 0,
         misses: misses.count ?? 0,
         redemptions: redemptions.count ?? 0,
         circles: circles.count ?? 0,
@@ -271,7 +269,6 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
               <section className="metrics">
                 <Metric label="NEW USERS · 7D" value={metrics.data?.newUsers ?? 0} />
                 <Metric label="COMMITMENTS · 7D" value={metrics.data?.commitments ?? 0} />
-                <Metric label="PROOFS SUBMITTED · 7D" value={metrics.data?.proofs ?? 0} />
                 <Metric label="MISSES · 7D" value={metrics.data?.misses ?? 0} />
                 <Metric label="REDEMPTIONS · 7D" value={metrics.data?.redemptions ?? 0} />
                 <Metric label="NEW CIRCLES · 7D" value={metrics.data?.circles ?? 0} />
