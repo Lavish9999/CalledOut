@@ -10,6 +10,7 @@ type AdminProfile = {
   is_admin: boolean;
   account_status: string;
 };
+
 type Report = {
   id: string;
   reason: string;
@@ -20,18 +21,7 @@ type Report = {
   proof_submission_id: string | null;
   reporter_id: string;
 };
-type Proof = {
-  id: string;
-  status: string;
-  verification_score: number | null;
-  created_at: string;
-  captured_at: string;
-  user_id: string;
-  asset_path: string | null;
-  asset_url: string | null;
-  liveness_prompt: string | null;
-  commitment: { title: string } | null;
-};
+
 type UserRow = {
   id: string;
   display_name: string;
@@ -41,31 +31,63 @@ type UserRow = {
   created_at: string;
 };
 
+type AdminTab = 'overview' | 'reports' | 'users';
+
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
   return (
     <main className="auth">
       <section className="auth-card">
         <p className="eyebrow red">CALLEDOUT ADMIN</p>
-        <h1>Receipts, disputes, and consequences.</h1>
-        <p className="muted">Admin authorization is checked by Supabase on every protected query and RPC.</p>
-        <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" /></label>
-        <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" /></label>
+        <h1>Safety, reports, and account operations.</h1>
+        <p className="muted">
+          Workout proof stays between members and their accountability circles.
+          This dashboard is only for safety reports and account enforcement.
+        </p>
+        <label>
+          Email
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            type="email"
+          />
+        </label>
+        <label>
+          Password
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+          />
+        </label>
         {error && <p className="error">{error}</p>}
-        <button onClick={async () => {
-          setError('');
-          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-          if (signInError) setError(signInError.message);
-        }}>Sign in</button>
+        <button
+          onClick={async () => {
+            setError('');
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+            if (signInError) setError(signInError.message);
+          }}
+        >
+          Sign in
+        </button>
       </section>
     </main>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
-  return <article className="metric"><p className="eyebrow">{label}</p><strong>{value}</strong></article>;
+  return (
+    <article className="metric">
+      <p className="eyebrow">{label}</p>
+      <strong>{value}</strong>
+    </article>
+  );
 }
 
 function requiredReviewNote(promptText: string, initial = '') {
@@ -75,7 +97,7 @@ function requiredReviewNote(promptText: string, initial = '') {
 
 function Dashboard({ profile }: { profile: AdminProfile }) {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'overview' | 'reports' | 'proofs' | 'users'>('overview');
+  const [tab, setTab] = useState<AdminTab>('overview');
   const [search, setSearch] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -83,16 +105,18 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
     queryKey: ['admin', 'metrics'],
     queryFn: async () => {
       const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-      const [users, commitments, proofs, misses, redemptions, circles, subscriptions, reports] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', since),
-        supabase.from('commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
-        supabase.from('proof_submissions').select('*', { count: 'exact', head: true }).gte('created_at', since),
-        supabase.from('missed_commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
-        supabase.from('redemptions').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', since),
-        supabase.from('circles').select('*', { count: 'exact', head: true }).gte('created_at', since),
-        supabase.from('entitlements').select('*', { count: 'exact', head: true }).eq('identifier', 'pro').eq('status', 'active'),
-        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'open'),
-      ]);
+      const [users, commitments, proofs, misses, redemptions, circles, subscriptions, reports] =
+        await Promise.all([
+          supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', since),
+          supabase.from('commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
+          supabase.from('proof_submissions').select('*', { count: 'exact', head: true }).gte('created_at', since),
+          supabase.from('missed_commitments').select('*', { count: 'exact', head: true }).gte('created_at', since),
+          supabase.from('redemptions').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', since),
+          supabase.from('circles').select('*', { count: 'exact', head: true }).gte('created_at', since),
+          supabase.from('entitlements').select('*', { count: 'exact', head: true }).eq('identifier', 'pro').eq('status', 'active'),
+          supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'open'),
+        ]);
+
       return {
         newUsers: users.count ?? 0,
         commitments: commitments.count ?? 0,
@@ -110,37 +134,13 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
     queryKey: ['admin', 'reports'],
     enabled: tab === 'reports',
     queryFn: async () => {
-      const { data, error } = await supabase.from('reports').select('*').order('created_at', { ascending: false }).limit(100);
-      if (error) throw error;
-      return data as Report[];
-    },
-  });
-
-  const proofs = useQuery({
-    queryKey: ['admin', 'proofs'],
-    enabled: tab === 'proofs',
-    queryFn: async () => {
       const { data, error } = await supabase
-        .from('proof_submissions')
-        .select('id,status,verification_score,created_at,captured_at,user_id,asset_path,liveness_prompt,commitment:commitments(title)')
-        .in('status', ['circle_review', 'disputed'])
+        .from('reports')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
-
-      return Promise.all((data ?? []).map(async (row) => {
-        const commitment = Array.isArray(row.commitment) ? row.commitment[0] ?? null : row.commitment;
-        let assetUrl: string | null = null;
-        if (row.asset_path) {
-          const signed = await supabase.storage.from('proof-media').createSignedUrl(row.asset_path, 600);
-          if (!signed.error) assetUrl = signed.data.signedUrl;
-        }
-        return {
-          ...row,
-          commitment,
-          asset_url: assetUrl,
-        } as Proof;
-      }));
+      return data as Report[];
     },
   });
 
@@ -153,7 +153,13 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
         .select('id,display_name,username,account_status,completion_rate,created_at')
         .order('created_at', { ascending: false })
         .limit(100);
-      if (search.trim()) query = query.or(`username.ilike.%${search.trim()}%,display_name.ilike.%${search.trim()}%`);
+
+      if (search.trim()) {
+        query = query.or(
+          `username.ilike.%${search.trim()}%,display_name.ilike.%${search.trim()}%`,
+        );
+      }
+
       const { data, error } = await query;
       if (error) throw error;
       return data as UserRow[];
@@ -161,7 +167,11 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
   });
 
   const moderate = useMutation({
-    mutationFn: async (input: { userId: string; action: 'suspend' | 'ban' | 'reinstate'; reason: string }) => {
+    mutationFn: async (input: {
+      userId: string;
+      action: 'suspend' | 'ban' | 'reinstate';
+      reason: string;
+    }) => {
       const { error } = await supabase.rpc('admin_moderate_user', {
         p_user_id: input.userId,
         p_action: input.action,
@@ -171,11 +181,16 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
     },
     onMutate: () => setActionError(''),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
-    onError: (error) => setActionError(error instanceof Error ? error.message : 'Moderation failed'),
+    onError: (error) =>
+      setActionError(error instanceof Error ? error.message : 'Moderation failed'),
   });
 
   const resolve = useMutation({
-    mutationFn: async (input: { reportId: string; status: 'actioned' | 'dismissed'; notes: string }) => {
+    mutationFn: async (input: {
+      reportId: string;
+      status: 'actioned' | 'dismissed';
+      notes: string;
+    }) => {
       const { error } = await supabase.rpc('admin_resolve_report', {
         p_report_id: input.reportId,
         p_status: input.status,
@@ -184,89 +199,202 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
       if (error) throw error;
     },
     onMutate: () => setActionError(''),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] }),
-    onError: (error) => setActionError(error instanceof Error ? error.message : 'Report action failed'),
-  });
-
-  const decideProof = useMutation({
-    mutationFn: async (input: { proofId: string; accept: boolean; reason: string }) => {
-      const { error } = await supabase.rpc('admin_decide_proof', {
-        p_submission: input.proofId,
-        p_accept: input.accept,
-        p_reason: input.reason,
-      });
-      if (error) throw error;
-    },
-    onMutate: () => setActionError(''),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['admin', 'proofs'] }),
-        queryClient.invalidateQueries({ queryKey: ['admin', 'metrics'] }),
-      ]);
-    },
-    onError: (error) => setActionError(error instanceof Error ? error.message : 'Proof decision failed'),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] }),
+    onError: (error) =>
+      setActionError(error instanceof Error ? error.message : 'Report action failed'),
   });
 
   function moderateUser(user: UserRow, action: 'suspend' | 'ban' | 'reinstate') {
-    const reason = requiredReviewNote(`Required case note for ${action}ing @${user.username}:`);
+    const reason = requiredReviewNote(
+      `Required case note for ${action}ing @${user.username}:`,
+    );
     if (!reason) return;
     if (!window.confirm(`${action} @${user.username}? This action is audited.`)) return;
     moderate.mutate({ userId: user.id, action, reason });
   }
 
   function resolveReport(report: Report, status: 'actioned' | 'dismissed') {
-    const notes = requiredReviewNote(`Required review note for marking this report ${status}:`);
+    const notes = requiredReviewNote(
+      `Required review note for marking this report ${status}:`,
+    );
     if (!notes) return;
     if (!window.confirm(`Mark this report ${status}?`)) return;
     resolve.mutate({ reportId: report.id, status, notes });
   }
 
-  function reviewProof(proof: Proof, accept: boolean) {
-    const reason = requiredReviewNote(
-      accept ? 'What in the photo confirms the prompt and workout environment?' : 'Why does this proof fail the prompt or workout requirement?',
-    );
-    if (!reason) return;
-    if (!window.confirm(`${accept ? 'Approve' : 'Reject'} this proof? The member record will update immediately.`)) return;
-    decideProof.mutate({ proofId: proof.id, accept, reason });
-  }
-
   return (
     <div className="shell">
       <aside>
-        <div><p className="eyebrow red">CALLEDOUT</p><h2>Admin</h2></div>
-        <nav>{(['overview', 'reports', 'proofs', 'users'] as const).map((item) => (
-          <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}</button>
-        ))}</nav>
-        <div><p className="muted">{profile.display_name}<br />@{profile.username}</p><button className="secondary" onClick={() => supabase.auth.signOut()}>Sign out</button></div>
+        <div>
+          <p className="eyebrow red">CALLEDOUT</p>
+          <h2>Admin</h2>
+        </div>
+        <nav>
+          {(['overview', 'reports', 'users'] as const).map((item) => (
+            <button
+              className={tab === item ? 'active' : ''}
+              onClick={() => setTab(item)}
+              key={item}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
+        <div>
+          <p className="muted">
+            {profile.display_name}
+            <br />@{profile.username}
+          </p>
+          <button className="secondary" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
       </aside>
+
       <main className="workspace">
-        <header><div><p className="eyebrow">SECURE OPERATIONS</p><h1>{tab[0].toUpperCase() + tab.slice(1)}</h1></div><span className="stamp">ADMIN VERIFIED</span></header>
+        <header>
+          <div>
+            <p className="eyebrow">SECURE OPERATIONS</p>
+            <h1>{tab[0].toUpperCase() + tab.slice(1)}</h1>
+          </div>
+          <span className="stamp">ADMIN VERIFIED</span>
+        </header>
+
         {actionError && <p className="error">{actionError}</p>}
-        {tab === 'overview' && <>
-          {metrics.isLoading ? <p>Loading metrics…</p> : <section className="metrics">
-            <Metric label="NEW USERS · 7D" value={metrics.data?.newUsers ?? 0} />
-            <Metric label="COMMITMENTS · 7D" value={metrics.data?.commitments ?? 0} />
-            <Metric label="PROOFS · 7D" value={metrics.data?.proofs ?? 0} />
-            <Metric label="MISSES · 7D" value={metrics.data?.misses ?? 0} />
-            <Metric label="REDEMPTIONS · 7D" value={metrics.data?.redemptions ?? 0} />
-            <Metric label="NEW CIRCLES · 7D" value={metrics.data?.circles ?? 0} />
-            <Metric label="ACTIVE PRO" value={metrics.data?.pro ?? 0} />
-            <Metric label="OPEN REPORTS" value={metrics.data?.openReports ?? 0} />
-          </section>}
-          <section className="panel"><h3>Operating principle</h3><p>Review behavior and proof integrity only. Never moderate users based on body shape, weight, athletic ability, disability, or workout intensity.</p></section>
-        </>}
-        {tab === 'reports' && <section className="panel table-wrap"><table><thead><tr><th>Created</th><th>Reason</th><th>Status</th><th>Target</th><th>Action</th></tr></thead><tbody>
-          {reports.data?.map((report) => <tr key={report.id}><td>{new Date(report.created_at).toLocaleString()}</td><td><strong>{report.reason}</strong><br /><span className="muted">{report.details}</span></td><td>{report.status}</td><td>{report.reported_user_id ?? report.proof_submission_id ?? 'Content'}</td><td><button onClick={() => resolveReport(report, 'actioned')}>Actioned</button><button className="secondary" onClick={() => resolveReport(report, 'dismissed')}>Dismiss</button></td></tr>)}
-        </tbody></table></section>}
-        {tab === 'proofs' && <section className="panel table-wrap"><table><thead><tr><th>Captured</th><th>Workout</th><th>Prompt</th><th>Photo</th><th>Status</th><th>User</th><th>Decision</th></tr></thead><tbody>
-          {proofs.data?.map((proof) => <tr key={proof.id}><td>{new Date(proof.captured_at).toLocaleString()}</td><td>{proof.commitment?.title ?? 'Workout proof'}</td><td>{proof.liveness_prompt ?? 'No prompt'}</td><td>{proof.asset_url ? <a href={proof.asset_url} target="_blank" rel="noreferrer">Open proof</a> : 'Unavailable'}</td><td>{proof.status}</td><td>{proof.user_id}</td><td><button disabled={decideProof.isPending} onClick={() => reviewProof(proof, true)}>Approve</button><button className="danger" disabled={decideProof.isPending} onClick={() => reviewProof(proof, false)}>Reject</button></td></tr>)}
-        </tbody></table></section>}
-        {tab === 'users' && <>
-          <input className="search" placeholder="Search display name or username" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <section className="panel table-wrap"><table><thead><tr><th>User</th><th>Status</th><th>Completion</th><th>Joined</th><th>Moderation</th></tr></thead><tbody>
-            {users.data?.map((user) => <tr key={user.id}><td><strong>{user.display_name}</strong><br /><span className="muted">@{user.username}</span></td><td>{user.account_status}</td><td>{user.completion_rate}%</td><td>{new Date(user.created_at).toLocaleDateString()}</td><td><button disabled={moderate.isPending} onClick={() => moderateUser(user, 'suspend')}>Suspend</button><button className="danger" disabled={moderate.isPending} onClick={() => moderateUser(user, 'ban')}>Ban</button><button className="secondary" disabled={moderate.isPending} onClick={() => moderateUser(user, 'reinstate')}>Reinstate</button></td></tr>)}
-          </tbody></table></section>
-        </>}
+
+        {tab === 'overview' && (
+          <>
+            {metrics.isLoading ? (
+              <p>Loading metrics…</p>
+            ) : (
+              <section className="metrics">
+                <Metric label="NEW USERS · 7D" value={metrics.data?.newUsers ?? 0} />
+                <Metric label="COMMITMENTS · 7D" value={metrics.data?.commitments ?? 0} />
+                <Metric label="PROOFS SUBMITTED · 7D" value={metrics.data?.proofs ?? 0} />
+                <Metric label="MISSES · 7D" value={metrics.data?.misses ?? 0} />
+                <Metric label="REDEMPTIONS · 7D" value={metrics.data?.redemptions ?? 0} />
+                <Metric label="NEW CIRCLES · 7D" value={metrics.data?.circles ?? 0} />
+                <Metric label="ACTIVE PRO" value={metrics.data?.pro ?? 0} />
+                <Metric label="OPEN REPORTS" value={metrics.data?.openReports ?? 0} />
+              </section>
+            )}
+            <section className="panel">
+              <h3>Operating boundary</h3>
+              <p>
+                Workout proof is decided by the member’s own circle. Private
+                fresh proof is verified automatically when required capture
+                checks pass. Admins handle safety reports and account enforcement
+                only.
+              </p>
+            </section>
+          </>
+        )}
+
+        {tab === 'reports' && (
+          <section className="panel table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Created</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Target</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.data?.map((report) => (
+                  <tr key={report.id}>
+                    <td>{new Date(report.created_at).toLocaleString()}</td>
+                    <td>
+                      <strong>{report.reason}</strong>
+                      <br />
+                      <span className="muted">{report.details}</span>
+                    </td>
+                    <td>{report.status}</td>
+                    <td>
+                      {report.reported_user_id ??
+                        report.proof_submission_id ??
+                        'Content'}
+                    </td>
+                    <td>
+                      <button onClick={() => resolveReport(report, 'actioned')}>
+                        Actioned
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() => resolveReport(report, 'dismissed')}
+                      >
+                        Dismiss
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+        {tab === 'users' && (
+          <>
+            <input
+              className="search"
+              placeholder="Search display name or username"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <section className="panel table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Completion</th>
+                    <th>Joined</th>
+                    <th>Moderation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.data?.map((user) => (
+                    <tr key={user.id}>
+                      <td>
+                        <strong>{user.display_name}</strong>
+                        <br />
+                        <span className="muted">@{user.username}</span>
+                      </td>
+                      <td>{user.account_status}</td>
+                      <td>{user.completion_rate}%</td>
+                      <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <button
+                          disabled={moderate.isPending}
+                          onClick={() => moderateUser(user, 'suspend')}
+                        >
+                          Suspend
+                        </button>
+                        <button
+                          className="danger"
+                          disabled={moderate.isPending}
+                          onClick={() => moderateUser(user, 'ban')}
+                        >
+                          Ban
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={moderate.isPending}
+                          onClick={() => moderateUser(user, 'reinstate')}
+                        >
+                          Reinstate
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
@@ -274,23 +402,51 @@ function Dashboard({ profile }: { profile: AdminProfile }) {
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => subscription.unsubscribe();
   }, []);
+
   const profile = useQuery({
     queryKey: ['admin', 'profile', session?.user.id],
     enabled: Boolean(session),
     queryFn: async () => {
-      const { data, error } = await supabase.from('profiles').select('id,display_name,username,is_admin,account_status').eq('id', session!.user.id).single();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,display_name,username,is_admin,account_status')
+        .eq('id', session!.user.id)
+        .single();
       if (error) throw error;
       return data as AdminProfile;
     },
   });
-  const denied = useMemo(() => profile.data && (!profile.data.is_admin || profile.data.account_status !== 'active'), [profile.data]);
+
+  const denied = useMemo(
+    () =>
+      profile.data &&
+      (!profile.data.is_admin || profile.data.account_status !== 'active'),
+    [profile.data],
+  );
+
   if (!session) return <Login />;
-  if (profile.isLoading) return <main className="center">Checking admin authorization…</main>;
-  if (denied) return <main className="center"><section className="auth-card"><h1>Access denied.</h1><p>This account does not have an active server-authorized admin role.</p><button onClick={() => supabase.auth.signOut()}>Sign out</button></section></main>;
+  if (profile.isLoading) {
+    return <main className="center">Checking admin authorization…</main>;
+  }
+  if (denied) {
+    return (
+      <main className="center">
+        <section className="auth-card">
+          <h1>Access denied.</h1>
+          <p>This account does not have an active server-authorized admin role.</p>
+          <button onClick={() => supabase.auth.signOut()}>Sign out</button>
+        </section>
+      </main>
+    );
+  }
+
   return profile.data ? <Dashboard profile={profile.data} /> : null;
 }
