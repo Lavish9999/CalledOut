@@ -13,3 +13,7 @@ supabase/.temp
 .calledout-patch-backups/
 typecheck-*.txt
 verify-final.txt
+
+.calledout-patch-backups/
+typecheck-*.txt
+verify-final.txt
