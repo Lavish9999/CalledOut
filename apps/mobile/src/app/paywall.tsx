@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { PACKAGE_TYPE, type PurchasesPackage } from "react-native-purchases";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 import {
   Button,
@@ -124,6 +124,36 @@ function planPriceCopy(pkg: PurchasesPackage) {
   }
 
   return pkg.product.priceString;
+}
+
+function SelectionIndicator({
+  chosen,
+  annual,
+}: {
+  chosen: boolean;
+  annual: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.selectionIndicator,
+        annual ? styles.selectionIndicatorAnnual : styles.selectionIndicatorMonthly,
+        chosen
+          ? annual
+            ? styles.selectionIndicatorAnnualChosen
+            : styles.selectionIndicatorMonthlyChosen
+          : null,
+      ]}
+    >
+      {chosen ? (
+        <Ionicons
+          name="checkmark"
+          size={19}
+          color={annual ? colors.dark : colors.surface}
+        />
+      ) : null}
+    </View>
+  );
 }
 
 export default function Paywall() {
@@ -418,7 +448,11 @@ export default function Paywall() {
       <View style={styles.hero}>
         <View style={styles.heroCopy}>
           <View style={styles.proBadge}>
-            <Text style={styles.crownGlyph}>♛</Text>
+            <MaterialCommunityIcons
+              name="crown-outline"
+              size={20}
+              color={gold}
+            />
             <Text variant="label" style={{ color: colors.text }}>
               CALLEDOUT PRO
             </Text>
@@ -433,7 +467,7 @@ export default function Paywall() {
 
         <View style={styles.crownTile}>
           <View style={styles.crownGlow} />
-          <Text style={styles.heroCrown}>♛</Text>
+          <MaterialCommunityIcons name="crown" size={58} color={goldBright} />
         </View>
       </View>
 
@@ -530,11 +564,7 @@ export default function Paywall() {
                           </Text>
                         </View>
                       ) : null}
-                      <Ionicons
-                        name={chosen ? "radio-button-on" : "radio-button-off"}
-                        size={30}
-                        color={annual ? goldSoft : colors.textSecondary}
-                      />
+                      <SelectionIndicator chosen={chosen} annual={annual} />
                     </View>
                   </View>
 
@@ -592,9 +622,7 @@ export default function Paywall() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              selected
-                ? `Continue with ${packageLabel(selected)}`
-                : "Continue"
+              selected ? `Continue with ${packageLabel(selected)}` : "Continue"
             }
             disabled={!selected || purchasing}
             onPress={buy}
@@ -608,7 +636,11 @@ export default function Paywall() {
               <ActivityIndicator color={colors.surface} />
             ) : (
               <>
-                <Text style={styles.ctaCrown}>♛</Text>
+                <MaterialCommunityIcons
+                  name="crown-outline"
+                  size={28}
+                  color={goldSoft}
+                />
                 <Text variant="section" style={{ color: colors.surface }}>
                   {selected
                     ? `Continue with ${packageLabel(selected)}`
@@ -726,11 +758,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  crownGlyph: {
-    color: gold,
-    fontSize: 20,
-    lineHeight: 22,
-  },
   heroTitle: {
     fontSize: 42,
     lineHeight: 44,
@@ -763,14 +790,6 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     backgroundColor: goldWash,
     opacity: 0.9,
-  },
-  heroCrown: {
-    color: goldBright,
-    fontSize: 58,
-    lineHeight: 64,
-    textShadowColor: "rgba(183,121,31,0.25)",
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 8,
   },
   featurePanel: {
     backgroundColor: colors.surface,
@@ -859,6 +878,30 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: spacing.md,
   },
+  selectionIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectionIndicatorAnnual: {
+    borderColor: goldSoft,
+    backgroundColor: "transparent",
+  },
+  selectionIndicatorAnnualChosen: {
+    borderColor: goldSoft,
+    backgroundColor: goldSoft,
+  },
+  selectionIndicatorMonthly: {
+    borderColor: colors.textSecondary,
+    backgroundColor: "transparent",
+  },
+  selectionIndicatorMonthlyChosen: {
+    borderColor: colors.dark,
+    backgroundColor: colors.dark,
+  },
   bestValuePill: {
     alignSelf: "flex-start",
     backgroundColor: goldSoft,
@@ -912,11 +955,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 14,
     elevation: 4,
-  },
-  ctaCrown: {
-    color: goldSoft,
-    fontSize: 28,
-    lineHeight: 32,
   },
   cancelRow: {
     flexDirection: "row",
