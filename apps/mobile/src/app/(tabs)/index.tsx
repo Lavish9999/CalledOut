@@ -38,16 +38,19 @@ const onClockStatuses = new Set([
 const completedStatuses = new Set(["verified", "excused"]);
 
 export default function Today() {
-  const { profile } = useSession();
+  const { session, profile } = useSession();
+  const userId = session?.user.id ?? null;
   const [showCompleted, setShowCompleted] = useState(false);
 
   const dashboardQuery = useQuery({
-    queryKey: qk.today,
+    queryKey: [...qk.today, userId ?? "signed-out"],
     queryFn: getTodayDashboard,
+    enabled: Boolean(userId),
   });
   const recordQuery = useQuery({
-    queryKey: qk.record,
+    queryKey: [...qk.record, userId ?? "signed-out"],
     queryFn: getProfileRecord,
+    enabled: Boolean(userId),
   });
 
   const refetchDashboard = dashboardQuery.refetch;
@@ -55,14 +58,15 @@ export default function Today() {
 
   useFocusEffect(
     useCallback(() => {
-      refetchDashboard();
-      refetchRecord();
-    }, [refetchDashboard, refetchRecord]),
+      if (!userId) return;
+      void refetchDashboard();
+      void refetchRecord();
+    }, [userId, refetchDashboard, refetchRecord]),
   );
 
   const content = useMemo(() => {
     const dashboard = dashboardQuery.data;
-    if (!dashboard) {
+    if (!dashboard || !userId) {
       return {
         onClock: [] as Commitment[],
         upcoming: [] as Commitment[],
@@ -72,8 +76,11 @@ export default function Today() {
       };
     }
 
+    const ownedCommitments = dashboard.commitments.filter(
+      (commitment) => commitment.user_id === userId,
+    );
     const commitmentById = new Map(
-      dashboard.commitments.map((commitment) => [commitment.id, commitment]),
+      ownedCommitments.map((commitment) => [commitment.id, commitment]),
     );
     const redemptionCommitmentIds = new Set(
       dashboard.redemptions
@@ -96,7 +103,7 @@ export default function Today() {
       }))
       .filter((journey) => Boolean(journey.source));
 
-    const regular = dashboard.commitments.filter(
+    const regular = ownedCommitments.filter(
       (commitment) =>
         !redemptionCommitmentIds.has(commitment.id) &&
         !journeySourceIds.has(commitment.id),
@@ -119,7 +126,7 @@ export default function Today() {
         completedStatuses.has(commitment.status),
       ),
     };
-  }, [dashboardQuery.data]);
+  }, [dashboardQuery.data, userId]);
 
   const activeJourneys = content.journeys.filter(
     (journey) => journey.redemption.status !== "completed",
@@ -146,7 +153,7 @@ export default function Today() {
       : todayPromiseCount > 0
         ? "Start your streak today"
         : "Make the next promise count";
-  const hasTodayItems = Boolean(dashboardQuery.data?.commitments.length);
+  const hasTodayItems = todayPromiseCount > 0;
   const hasPrimaryContent = Boolean(
     content.onClock.length ||
     content.upcoming.length ||
