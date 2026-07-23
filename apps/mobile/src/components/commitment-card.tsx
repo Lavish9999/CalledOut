@@ -44,6 +44,7 @@ export function CommitmentCard({ item }: { item: Commitment }) {
     ["upcoming", "proof_window_open"].includes(item.status) &&
     new Date(item.deadline_at) > new Date() &&
     gracePassesRemaining > 0;
+  const hasCircle = Boolean(item.circle?.name);
   const audience = item.circle?.name ?? "Private";
   const proofLabel =
     item.proof_method === "live_photo"
@@ -123,10 +124,13 @@ export function CommitmentCard({ item }: { item: Commitment }) {
         </>
       ) : item.status === "under_review" ? (
         <>
-          <Text variant="bodyStrong">Circle review</Text>
+          <Text variant="bodyStrong">
+            {hasCircle ? "Circle review" : "CalledOut review"}
+          </Text>
           <Text style={{ color: colors.textSecondary }}>
-            Automated checks were not decisive. Your accountability circle can
-            review the fresh capture.
+            {hasCircle
+              ? "Eligible members of your accountability circle can review the fresh capture."
+              : "The circle was removed, so an authorized CalledOut reviewer will decide the fresh capture."}
           </Text>
         </>
       ) : item.status === "proof_submitted" ? (
