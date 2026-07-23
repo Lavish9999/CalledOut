@@ -39,6 +39,23 @@ type ProofRecord = {
   commitment: CommitmentRecord | CommitmentRecord[] | null;
 };
 
+async function finalizePrivateProof(
+  admin: AdminClient,
+  submissionId: string,
+  userId: string,
+) {
+  const finalized = await admin.rpc("finalize_automatic_private_proof", {
+    p_submission: submissionId,
+    p_user: userId,
+  });
+
+  if (finalized.error) {
+    throw new Error(
+      `Private proof finalization failed: ${finalized.error.message}`,
+    );
+  }
+}
+
 async function notifyCircleReviewers(
   admin: AdminClient,
   commitment: CommitmentRecord,
@@ -172,6 +189,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    const commitment = Array.isArray(proof.commitment)
+      ? (proof.commitment[0] ?? null)
+      : proof.commitment;
+
+    if (!commitment) {
+      return json({ error: "Commitment data was not found" }, 404);
+    }
+
     if (proof.status === "verified") {
       return json({
         status: "verified",
@@ -180,11 +205,78 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (proof.status === "circle_review" || proof.status === "disputed") {
+    if (proof.status === "circle_review") {
+      if (!commitment.circle_id) {
+        await finalizePrivateProof(admin, submissionId, user.id);
+        return json({
+          status: "verified",
+          score: null,
+          explanation:
+            "Fresh private proof was verified automatically. Promise kept.",
+        });
+      }
+
       return json({
         status: "circle_review",
         score: null,
-        explanation: "This proof is already awaiting human review.",
+        explanation: "This proof is already waiting for circle review.",
+      });
+    }
+
+    if (proof.status === "disputed") {
+      if (commitment.circle_id) {
+        const [proofReset, commitmentReset] = await Promise.all([
+          admin
+            .from("proof_submissions")
+            .update({ status: "circle_review", decided_at: null })
+            .eq("id", submissionId),
+          admin
+            .from("commitments")
+            .update({ status: "under_review", verified_at: null })
+            .eq("id", proof.commitment_id),
+        ]);
+
+        if (proofReset.error) throw proofReset.error;
+        if (commitmentReset.error) throw commitmentReset.error;
+
+        await notifyCircleReviewers(admin, commitment, submissionId).catch(
+          (notificationError: unknown) => {
+            console.error(
+              "Disputed proof review notification failed",
+              notificationError,
+            );
+          },
+        );
+
+        return json({
+          status: "circle_review",
+          score: null,
+          explanation: "The proof was returned to the circle for review.",
+        });
+      }
+
+      const [proofRejected, commitmentRejected] = await Promise.all([
+        admin
+          .from("proof_submissions")
+          .update({
+            status: "rejected",
+            decided_at: new Date().toISOString(),
+            dispute_reason: "Retake fresh private proof before the deadline.",
+          })
+          .eq("id", submissionId),
+        admin
+          .from("commitments")
+          .update({ status: "rejected", verified_at: null })
+          .eq("id", proof.commitment_id),
+      ]);
+
+      if (proofRejected.error) throw proofRejected.error;
+      if (commitmentRejected.error) throw commitmentRejected.error;
+
+      return json({
+        status: "more_proof_required",
+        score: null,
+        explanation: "Retake fresh private proof before the deadline.",
       });
     }
 
@@ -195,13 +287,6 @@ Deno.serve(async (req) => {
         explanation:
           "This proof was rejected. Retake fresh proof before the deadline.",
       });
-    }
-
-    const commitment = Array.isArray(proof.commitment)
-      ? (proof.commitment[0] ?? null)
-      : proof.commitment;
-    if (!commitment) {
-      return json({ error: "Commitment data was not found" }, 404);
     }
 
     const now = Date.now();
@@ -263,14 +348,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    const readyForHumanReview = Object.values(signals).every(Boolean);
-    const decision = readyForHumanReview
+    const readyForDecision = Object.values(signals).every(Boolean);
+
+    if (readyForDecision && !commitment.circle_id) {
+      await finalizePrivateProof(admin, submissionId, user.id);
+
+      const auditInsert = await admin.from("audit_logs").insert({
+        actor_id: user.id,
+        action: "private_proof_readiness_checked",
+        entity_type: "proof_submission",
+        entity_id: submissionId,
+        after_state: {
+          decision: "verified",
+          stored_proof_status: "verified",
+          signals,
+        },
+      });
+
+      if (auditInsert.error) {
+        console.error("Private proof audit log failed", auditInsert.error);
+      }
+
+      return json({
+        status: "verified",
+        score: null,
+        explanation:
+          "Fresh private proof was verified automatically. Promise kept.",
+      });
+    }
+
+    const decision = readyForDecision
       ? "circle_review"
       : "more_proof_required";
-    const storedProofStatus = readyForHumanReview
-      ? "circle_review"
-      : "rejected";
-    const decidedAt = readyForHumanReview ? null : new Date().toISOString();
+    const storedProofStatus = readyForDecision ? "circle_review" : "rejected";
+    const decidedAt = readyForDecision ? null : new Date().toISOString();
 
     const proofUpdate = await admin
       .from("proof_submissions")
@@ -288,7 +399,7 @@ Deno.serve(async (req) => {
     const commitmentUpdate = await admin
       .from("commitments")
       .update({
-        status: readyForHumanReview ? "under_review" : "rejected",
+        status: readyForDecision ? "under_review" : "rejected",
         verified_at: null,
       })
       .eq("id", proof.commitment_id);
@@ -299,7 +410,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (readyForHumanReview) {
+    if (readyForDecision) {
       await notifyCircleReviewers(admin, commitment, submissionId).catch(
         (notificationError: unknown) => {
           console.error("Proof review notification failed", notificationError);
@@ -326,10 +437,8 @@ Deno.serve(async (req) => {
     return json({
       status: decision,
       score: null,
-      explanation: readyForHumanReview
-        ? commitment.circle_id
-          ? "Fresh proof was received and circle reviewers were notified."
-          : "Fresh proof was received and is awaiting authorized review."
+      explanation: readyForDecision
+        ? "Fresh proof was received and eligible circle members were notified."
         : "This capture is missing required proof metadata. Retake fresh proof before the deadline.",
     });
   } catch (error) {
