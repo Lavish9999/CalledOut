@@ -1,8 +1,8 @@
 begin;
 
 -- Repair proof reviews that were stranded when their circle was deleted before
--- this guard existed. These are closed as excused rather than verified or
--- missed because no eligible reviewer can complete the decision.
+-- this guard existed. Intentionally private commitments have circle_id = null
+-- and must remain available to the CalledOut admin review queue.
 create temporary table orphaned_circle_reviews on commit drop as
 select
   commitment.id as commitment_id,
@@ -17,7 +17,8 @@ left join public.circles circle
   and circle.deleted_at is null
 where commitment.deleted_at is null
   and commitment.status = 'under_review'
-  and (commitment.circle_id is null or circle.id is null);
+  and commitment.circle_id is not null
+  and circle.id is null;
 
 update public.proof_submissions proof
 set status = 'rejected',
