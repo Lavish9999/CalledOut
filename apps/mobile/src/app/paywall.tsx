@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { PACKAGE_TYPE, type PurchasesPackage } from "react-native-purchases";
-import { FontAwesome5, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   Button,
@@ -88,6 +88,7 @@ function annualSavings(packages: PurchasesPackage[]) {
   );
 
   if (!monthly || !annual || monthly.product.price <= 0) return null;
+
   const yearlyMonthlyPrice = monthly.product.price * 12;
   const percentage = Math.round(
     ((yearlyMonthlyPrice - annual.product.price) / yearlyMonthlyPrice) * 100,
@@ -448,7 +449,7 @@ export default function Paywall() {
       <View style={styles.hero}>
         <View style={styles.heroCopy}>
           <View style={styles.proBadge}>
-            <FontAwesome5 name="crown" solid size={17} color={gold} />
+            <View style={styles.proBadgeAccent} />
             <Text variant="label" style={{ color: colors.text }}>
               CALLEDOUT PRO
             </Text>
@@ -461,9 +462,11 @@ export default function Paywall() {
           </Text>
         </View>
 
-        <View style={styles.crownTile}>
-          <View style={styles.crownGlow} />
-          <FontAwesome5 name="crown" solid size={48} color={goldBright} />
+        <View style={styles.proTile}>
+          <Text variant="label" style={styles.proTileLabel}>
+            PRO
+          </Text>
+          <View style={styles.proTileRule} />
         </View>
       </View>
 
@@ -633,14 +636,11 @@ export default function Paywall() {
             {purchasing ? (
               <ActivityIndicator color={colors.surface} />
             ) : (
-              <>
-                <FontAwesome5 name="crown" solid size={23} color={goldSoft} />
-                <Text variant="section" style={{ color: colors.surface }}>
-                  {selected
-                    ? `Continue with ${packageLabel(selected)}`
-                    : "Continue"}
-                </Text>
-              </>
+              <Text variant="section" style={{ color: colors.surface }}>
+                {selected
+                  ? `Continue with ${packageLabel(selected)}`
+                  : "Continue"}
+              </Text>
             )}
           </Pressable>
 
@@ -671,12 +671,7 @@ export default function Paywall() {
       )}
 
       {message ? (
-        <View
-          style={[
-            styles.messageCard,
-            { borderColor: messageColor },
-          ]}
-        >
+        <View style={[styles.messageCard, { borderColor: messageColor }]}>
           <Ionicons
             name={
               messageTone === "success"
@@ -757,6 +752,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
+  proBadgeAccent: {
+    width: 4,
+    height: 18,
+    borderRadius: radius.pill,
+    backgroundColor: goldBright,
+  },
   heroTitle: {
     fontSize: 42,
     lineHeight: 44,
@@ -766,29 +767,33 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 19,
   },
-  crownTile: {
+  proTile: {
     width: 102,
     height: 118,
     borderRadius: radius.xl,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.dark,
     borderWidth: 1,
-    borderColor: "#EEE1C4",
+    borderColor: goldBright,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: gold,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 5,
-    overflow: "hidden",
+    gap: spacing.sm,
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 4,
   },
-  crownGlow: {
-    position: "absolute",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: goldWash,
-    opacity: 0.9,
+  proTileLabel: {
+    color: goldSoft,
+    fontSize: 22,
+    lineHeight: 26,
+    letterSpacing: 3.2,
+  },
+  proTileRule: {
+    width: 38,
+    height: 3,
+    borderRadius: radius.pill,
+    backgroundColor: goldBright,
   },
   featurePanel: {
     backgroundColor: colors.surface,
@@ -943,10 +948,8 @@ const styles = StyleSheet.create({
     minHeight: 60,
     borderRadius: radius.lg,
     backgroundColor: colors.dark,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     shadowColor: colors.dark,
     shadowOffset: { width: 0, height: 8 },
